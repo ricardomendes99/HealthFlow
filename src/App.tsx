@@ -10,6 +10,7 @@ import QuestionnairesPage from './pages/app/QuestionnairesPage'
 import ResponsesPage from './pages/app/ResponsesPage'
 import RemindersPage from './pages/app/RemindersPage'
 import ClientAreaPage from './pages/app/ClientAreaPage'
+import TutorialsPage from './pages/app/TutorialsPage'
 import PatientPage from './pages/patient/PatientPage'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -36,6 +37,7 @@ function AppRoutes() {
         <Route path="respostas" element={<ResponsesPage />} />
         <Route path="lembretes" element={<RemindersPage />} />
         <Route path="area-cliente" element={<ClientAreaPage />} />
+        <Route path="tutoriais" element={<TutorialsPage />} />
       </Route>
       <Route path="/p/:slug" element={<PatientPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
