@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase'
+import { mockClients, mockQuestionnaires, mockCheckIns } from '../data/mockData'
 import type { Questionnaire } from '../types'
 
 export interface ProfessionalPublic {
@@ -13,6 +14,21 @@ export interface ProfessionalPublic {
 
 export async function getProfessionalBySlug(slug: string): Promise<ProfessionalPublic | null> {
   if (!supabase) {
+    const stored = localStorage.getItem('hf_user')
+    if (stored) {
+      const u = JSON.parse(stored)
+      const key = `hf_${u.id}_area_cliente`
+      const area = localStorage.getItem(key)
+      const area_data = area ? JSON.parse(area) : {}
+      return {
+        id: u.id,
+        nome_completo: area_data.nome || u.nome,
+        titulo_profissao: area_data.titulo || u.profissao,
+        cor_primaria: area_data.corPrimaria || '#2563eb',
+        cor_secundaria: area_data.corSecundaria || '#1d4ed8',
+        slug,
+      }
+    }
     return {
       id: '1', nome_completo: 'Dr. Ricardo Junin', titulo_profissao: 'Nutricionista',
       cor_primaria: '#2563eb', cor_secundaria: '#1d4ed8', slug,
@@ -30,7 +46,10 @@ export async function getProfessionalBySlug(slug: string): Promise<ProfessionalP
 }
 
 export async function getActiveQuestionnaires(profissionalId: string): Promise<Questionnaire[]> {
-  if (!supabase) return []
+  if (!supabase) {
+    return mockQuestionnaires
+      .filter(q => q.status === 'ativo' && q.perguntas && q.perguntas.length > 0)
+  }
 
   const { data, error } = await supabase
     .from('questionnaires')
@@ -63,9 +82,13 @@ export async function getActiveQuestionnaires(profissionalId: string): Promise<Q
 }
 
 export async function getClientByWhatsApp(profissionalId: string, whatsapp: string): Promise<{ id: string; nome: string } | null> {
-  if (!supabase) return null
-
   const clean = whatsapp.replace(/\D/g, '')
+
+  if (!supabase) {
+    const client = mockClients.find(c => c.whatsapp === clean && c.status === 'ativo')
+    return client ? { id: client.id, nome: client.nome } : null
+  }
+
   const { data, error } = await supabase
     .from('clients')
     .select('id, nome')
@@ -79,7 +102,9 @@ export async function getClientByWhatsApp(profissionalId: string, whatsapp: stri
 }
 
 export async function getClientCheckInHistory(clienteId: string) {
-  if (!supabase) return []
+  if (!supabase) {
+    return mockCheckIns.filter(c => c.cliente_id === clienteId)
+  }
 
   const { data, error } = await supabase
     .from('check_ins')

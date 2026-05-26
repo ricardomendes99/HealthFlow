@@ -25,7 +25,20 @@ export default function ClientAreaPage() {
   const capaRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (!user || !supabase) return
+    if (!user) return
+    if (!supabase) {
+      const key = `hf_${user.id}_area_cliente`
+      const stored = localStorage.getItem(key)
+      if (stored) {
+        const d = JSON.parse(stored)
+        setForm(prev => ({ ...prev, ...d }))
+      }
+      const foto = localStorage.getItem(`hf_${user.id}_foto_perfil`)
+      const capa = localStorage.getItem(`hf_${user.id}_capa_cliente`)
+      if (foto) setFotoUrl(foto)
+      if (capa) setCapaUrl(capa)
+      return
+    }
     supabase.from('professionals')
       .select('slug, titulo_profissao, cor_primaria, cor_secundaria, foto_perfil, capa_cliente')
       .eq('id', user.id)
@@ -53,12 +66,23 @@ export default function ClientAreaPage() {
     setUploading: (b: boolean) => void,
   ) => {
     if (!user) return
-    if (!supabase) {
-      setUploadError('Supabase não conectado. Verifique as variáveis de ambiente.')
-      return
-    }
     setUploading(true)
     setUploadError(null)
+    if (!supabase) {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const base64 = e.target?.result as string
+        localStorage.setItem(`hf_${user.id}_${field}`, base64)
+        setUrl(base64)
+        setUploading(false)
+      }
+      reader.onerror = () => {
+        setUploadError('Erro ao ler o arquivo.')
+        setUploading(false)
+      }
+      reader.readAsDataURL(file)
+      return
+    }
     try {
       const ext = file.name.split('.').pop()
       const path = `${user.id}/${field}.${ext}`
@@ -91,8 +115,9 @@ export default function ClientAreaPage() {
         cor_primaria: form.corPrimaria,
         cor_secundaria: form.corSecundaria,
       }).eq('id', user.id)
+    } else {
+      localStorage.setItem(`hf_${user.id}_area_cliente`, JSON.stringify(form))
     }
-    // Atualiza localStorage para refletir o novo nome imediatamente
     const stored = localStorage.getItem('hf_user')
     if (stored) {
       const parsed = JSON.parse(stored)
@@ -189,7 +214,7 @@ export default function ClientAreaPage() {
                     <>
                       <img src={fotoUrl} alt="Foto de perfil" className="w-20 h-20 rounded-full object-cover mx-auto mb-2" />
                       <button
-                        onClick={e => { e.stopPropagation(); setFotoUrl(null); if (supabase) supabase.from('professionals').update({ foto_perfil: null }).eq('id', user?.id) }}
+                        onClick={e => { e.stopPropagation(); setFotoUrl(null); if (supabase) supabase.from('professionals').update({ foto_perfil: null }).eq('id', user?.id); else if (user) localStorage.removeItem(`hf_${user.id}_foto_perfil`) }}
                         className="absolute top-2 right-2 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center text-white"
                       >
                         <X className="w-3.5 h-3.5" />
@@ -231,7 +256,7 @@ export default function ClientAreaPage() {
                     <>
                       <img src={capaUrl} alt="Capa" className="w-full h-20 rounded-xl object-cover mb-2" />
                       <button
-                        onClick={e => { e.stopPropagation(); setCapaUrl(null); if (supabase) supabase.from('professionals').update({ capa_cliente: null }).eq('id', user?.id) }}
+                        onClick={e => { e.stopPropagation(); setCapaUrl(null); if (supabase) supabase.from('professionals').update({ capa_cliente: null }).eq('id', user?.id); else if (user) localStorage.removeItem(`hf_${user.id}_capa_cliente`) }}
                         className="absolute top-2 right-2 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center text-white"
                       >
                         <X className="w-3.5 h-3.5" />

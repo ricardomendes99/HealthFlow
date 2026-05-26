@@ -40,15 +40,20 @@ export default function RemindersPage() {
     if (!form.cliente_id || !form.data_envio || !user) return
     setSaving(true)
     const dataHora = `${form.data_envio}T${form.hora_envio}:00`
-    await addReminderSvc(user.id, {
-      cliente_id: form.cliente_id,
-      questionario_id: form.questionario_id || (questionnaires[0]?.id ?? ''),
-      data_envio_programada: dataHora,
-      tipo: form.tipo,
-      canal: form.canal,
-    })
-    const updated = await getReminders(user.id)
-    setReminders(updated)
+    const clienteNome = clients.find(c => c.id === form.cliente_id)?.nome ?? ''
+    const questionarioId = form.questionario_id || (questionnaires[0]?.id ?? '')
+    const questionarioNome = questionnaires.find(q => q.id === questionarioId)?.nome ?? ''
+    const newReminder = await addReminderSvc(
+      user.id,
+      { cliente_id: form.cliente_id, questionario_id: questionarioId, data_envio_programada: dataHora, tipo: form.tipo, canal: form.canal },
+      { cliente_nome: clienteNome, questionario_nome: questionarioNome }
+    )
+    if (newReminder) {
+      setReminders(prev => [newReminder, ...prev])
+    } else {
+      const updated = await getReminders(user.id)
+      setReminders(updated)
+    }
     setSaving(false)
     setShowModal(false)
     setForm(EMPTY_FORM)
