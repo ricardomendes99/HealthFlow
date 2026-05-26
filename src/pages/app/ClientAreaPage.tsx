@@ -6,6 +6,7 @@ import { APP_DOMAIN, supabase } from '../../lib/supabase'
 export default function ClientAreaPage() {
   const { user } = useAuth()
   const [form, setForm] = useState({
+    nome: user?.nome || '',
     slug: user?.slug || '',
     titulo: user?.profissao || '',
     corPrimaria: '#2563eb',
@@ -31,6 +32,7 @@ export default function ClientAreaPage() {
       .then(({ data }) => {
         if (!data) return
         setForm({
+          nome: data.nome_completo || user.nome || '',
           slug: data.slug || user.slug || '',
           titulo: data.titulo_profissao || user.profissao || '',
           corPrimaria: data.cor_primaria || '#2563eb',
@@ -75,11 +77,18 @@ export default function ClientAreaPage() {
     setSaving(true)
     if (supabase) {
       await supabase.from('professionals').update({
+        nome_completo: form.nome,
         slug: form.slug,
         titulo_profissao: form.titulo,
         cor_primaria: form.corPrimaria,
         cor_secundaria: form.corSecundaria,
       }).eq('id', user.id)
+    }
+    // Atualiza localStorage para refletir o novo nome imediatamente
+    const stored = localStorage.getItem('hf_user')
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      localStorage.setItem('hf_user', JSON.stringify({ ...parsed, nome: form.nome }))
     }
     setSaving(false)
     setSaved(true)
@@ -128,7 +137,12 @@ export default function ClientAreaPage() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Nome completo</label>
-                <input value={user?.nome || ''} readOnly className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 text-slate-500" />
+                <input
+                  value={form.nome}
+                  onChange={e => set('nome', e.target.value)}
+                  placeholder="Seu nome completo"
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Título / Profissão</label>
@@ -275,10 +289,10 @@ export default function ClientAreaPage() {
                       <img src={fotoUrl} alt="" className="w-12 h-12 rounded-full object-cover mb-2 border-2 border-white/40" />
                     ) : (
                       <div className="w-12 h-12 bg-white/30 rounded-full mb-2 flex items-center justify-center text-white font-bold text-lg">
-                        {user?.nome?.charAt(0)}
+                        {form.nome?.charAt(0) || user?.nome?.charAt(0)}
                       </div>
                     )}
-                    <div className="text-white text-sm font-bold">{user?.nome}</div>
+                    <div className="text-white text-sm font-bold">{form.nome || user?.nome}</div>
                     <div className="text-white/70 text-xs">{form.titulo}</div>
                   </div>
                 </div>
