@@ -65,6 +65,22 @@ export async function getActiveQuestionnaires(profissionalId: string): Promise<Q
   }))
 }
 
+export async function getClientByWhatsApp(profissionalId: string, whatsapp: string): Promise<{ id: string; nome: string } | null> {
+  if (!supabase) return { id: '1', nome: 'Ana Carolina' }
+
+  const clean = whatsapp.replace(/\D/g, '')
+  const { data, error } = await supabase
+    .from('clients')
+    .select('id, nome')
+    .eq('profissional_id', profissionalId)
+    .eq('whatsapp', clean)
+    .eq('status', 'ativo')
+    .maybeSingle()
+
+  if (error || !data) return null
+  return data
+}
+
 export async function getClientCheckInHistory(clienteId: string) {
   if (!supabase) {
     const { mockCheckIns } = await import('../data/mockData')
