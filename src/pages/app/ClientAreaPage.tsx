@@ -19,6 +19,7 @@ export default function ClientAreaPage() {
   const [capaUrl, setCapaUrl] = useState<string | null>(null)
   const [uploadingFoto, setUploadingFoto] = useState(false)
   const [uploadingCapa, setUploadingCapa] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
 
   const fotoRef = useRef<HTMLInputElement>(null)
   const capaRef = useRef<HTMLInputElement>(null)
@@ -51,23 +52,30 @@ export default function ClientAreaPage() {
     setUrl: (u: string) => void,
     setUploading: (b: boolean) => void,
   ) => {
-    if (!user || !supabase) return
+    if (!user) return
+    if (!supabase) {
+      setUploadError('Supabase não conectado. Verifique as variáveis de ambiente.')
+      return
+    }
     setUploading(true)
+    setUploadError(null)
     try {
       const ext = file.name.split('.').pop()
       const path = `${user.id}/${field}.${ext}`
       const { error: upErr } = await supabase.storage
         .from('professionals')
         .upload(path, file, { upsert: true, contentType: file.type })
-      if (upErr) { console.error('upload error:', upErr); setUploading(false); return }
-
+      if (upErr) {
+        setUploadError(`Erro ao enviar: ${upErr.message}`)
+        setUploading(false)
+        return
+      }
       const { data: urlData } = supabase.storage.from('professionals').getPublicUrl(path)
       const publicUrl = urlData.publicUrl + '?t=' + Date.now()
-
       await supabase.from('professionals').update({ [field]: urlData.publicUrl }).eq('id', user.id)
       setUrl(publicUrl)
-    } catch (e) {
-      console.error('uploadImage failed:', e)
+    } catch (e: any) {
+      setUploadError(`Erro inesperado: ${e?.message ?? e}`)
     }
     setUploading(false)
   }
@@ -154,9 +162,9 @@ export default function ClientAreaPage() {
           {/* Fotos */}
           <div className="bg-white rounded-2xl border border-slate-200 p-6">
             <h2 className="font-semibold text-slate-800 mb-4">Imagens</h2>
-            {!supabase && (
-              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-4">
-                Upload de imagens requer Supabase configurado. Execute o SQL de criação do bucket e defina as variáveis de ambiente.
+            {uploadError && (
+              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-4">
+                {uploadError}
               </p>
             )}
             <div className="grid grid-cols-2 gap-4">
@@ -174,8 +182,8 @@ export default function ClientAreaPage() {
                   }}
                 />
                 <div
-                  onClick={() => supabase && fotoRef.current?.click()}
-                  className={`relative border-2 border-dashed rounded-2xl p-4 text-center transition-colors group ${supabase ? 'hover:border-primary-300 cursor-pointer' : 'opacity-60 cursor-not-allowed'} ${fotoUrl ? 'border-primary-300' : 'border-slate-200'}`}
+                  onClick={() => fotoRef.current?.click()}
+                  className={`relative border-2 border-dashed rounded-2xl p-4 text-center transition-colors group hover:border-primary-300 cursor-pointer ${fotoUrl ? 'border-primary-300' : 'border-slate-200'}`}
                 >
                   {fotoUrl ? (
                     <>
@@ -216,8 +224,8 @@ export default function ClientAreaPage() {
                   }}
                 />
                 <div
-                  onClick={() => supabase && capaRef.current?.click()}
-                  className={`relative border-2 border-dashed rounded-2xl p-4 text-center transition-colors group ${supabase ? 'hover:border-primary-300 cursor-pointer' : 'opacity-60 cursor-not-allowed'} ${capaUrl ? 'border-primary-300' : 'border-slate-200'}`}
+                  onClick={() => capaRef.current?.click()}
+                  className={`relative border-2 border-dashed rounded-2xl p-4 text-center transition-colors group hover:border-primary-300 cursor-pointer ${capaUrl ? 'border-primary-300' : 'border-slate-200'}`}
                 >
                   {capaUrl ? (
                     <>

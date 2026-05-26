@@ -52,12 +52,19 @@ export default function ClientsPage() {
     setClients(prev => prev.map(cl => cl.id === id ? { ...cl, flag: !cl.flag } : cl))
   }
 
+  const [addError, setAddError] = useState('')
+
   const addClient = async () => {
     if (!newClient.nome || !user) return
+    setAddError('')
     const added = await addClientSvc(user.id, newClient)
-    if (added) setClients(prev => [added, ...prev])
-    setNewClient({ nome: '', whatsapp: '', email: '', observacao: '', servico: '' })
-    setShowModal(false)
+    if (added) {
+      setClients(prev => [added, ...prev])
+      setNewClient({ nome: '', whatsapp: '', email: '', observacao: '', servico: '' })
+      setShowModal(false)
+    } else {
+      setAddError('Erro ao salvar cliente. Verifique a conexão com o banco.')
+    }
   }
 
   const handleImportCSV = async (file: File) => {
@@ -336,8 +343,11 @@ export default function ClientsPage() {
                 </div>
               ))}
             </div>
+            {addError && (
+              <p className="mx-6 text-xs text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2">{addError}</p>
+            )}
             <div className="flex gap-3 p-6 border-t border-slate-100">
-              <button onClick={() => setShowModal(false)} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-50">Cancelar</button>
+              <button onClick={() => { setShowModal(false); setAddError('') }} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-50">Cancelar</button>
               <button onClick={addClient} className="flex-1 bg-primary-600 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-primary-700">Adicionar</button>
             </div>
           </div>
