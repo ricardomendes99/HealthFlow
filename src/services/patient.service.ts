@@ -82,10 +82,7 @@ export async function getClientByWhatsApp(profissionalId: string, whatsapp: stri
 }
 
 export async function getClientCheckInHistory(clienteId: string) {
-  if (!supabase) {
-    const { mockCheckIns } = await import('../data/mockData')
-    return mockCheckIns
-  }
+  if (!supabase) return []
 
   const { data, error } = await supabase
     .from('check_ins')

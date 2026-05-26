@@ -11,7 +11,7 @@ export async function getClients(profissionalId: string): Promise<Client[]> {
     .eq('profissional_id', profissionalId)
     .order('nome')
 
-  if (error) { console.error('getClients:', error); return mockClients }
+  if (error) { console.error('getClients:', error); return [] }
 
   return data.map(row => ({
     id:              row.id,

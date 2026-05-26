@@ -11,7 +11,7 @@ export async function getReminders(profissionalId: string): Promise<Reminder[]> 
     .eq('profissional_id', profissionalId)
     .order('data_envio_programada', { ascending: false })
 
-  if (error) { console.error('getReminders:', error); return mockReminders }
+  if (error) { console.error('getReminders:', error); return [] }
 
   return data.map(row => ({
     id: row.id, profissional_id: row.profissional_id,

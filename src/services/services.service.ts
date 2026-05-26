@@ -11,7 +11,7 @@ export async function getServices(profissionalId: string): Promise<Service[]> {
     .eq('profissional_id', profissionalId)
     .order('created_at', { ascending: false })
 
-  if (error) { console.error('getServices:', error); return mockServices }
+  if (error) { console.error('getServices:', error); return [] }
 
   return data.map(row => ({
     id: row.id, profissional_id: row.profissional_id,
@@ -49,9 +49,27 @@ export async function saveService(
 export async function getChartData(profissionalId: string) {
   if (!supabase) return chartData
 
-  const { data, error } = await supabase.rpc('get_monthly_revenue', { p_profissional_id: profissionalId })
-  if (error) return chartData
-  return data ?? chartData
+  const { data, error } = await supabase
+    .from('financial_entries')
+    .select('valor, data')
+    .eq('profissional_id', profissionalId)
+    .order('data', { ascending: true })
+
+  if (error || !data || data.length === 0) return []
+
+  const months: Record<string, number> = {}
+  for (const row of data) {
+    const key = row.data.slice(0, 7) // 'YYYY-MM'
+    months[key] = (months[key] ?? 0) + Number(row.valor)
+  }
+  const names = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
+  return Object.entries(months)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-6)
+    .map(([key, valor]) => {
+      const mes = names[parseInt(key.slice(5, 7)) - 1]
+      return { mes, valor }
+    })
 }
 
 export async function getFinancialEntries(profissionalId: string): Promise<FinancialEntry[]> {
@@ -64,7 +82,7 @@ export async function getFinancialEntries(profissionalId: string): Promise<Finan
     .order('data', { ascending: false })
     .limit(20)
 
-  if (error) { console.error('getFinancialEntries:', error); return mockFinancialEntries }
+  if (error) { console.error('getFinancialEntries:', error); return [] }
 
   return data.map(row => ({
     id: row.id, profissional_id: row.profissional_id,

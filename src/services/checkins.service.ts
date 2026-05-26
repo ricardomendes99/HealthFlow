@@ -12,7 +12,7 @@ export async function getCheckIns(profissionalId: string): Promise<CheckIn[]> {
     .order('data_resposta', { ascending: false })
     .limit(50)
 
-  if (error) { console.error('getCheckIns:', error); return mockCheckIns }
+  if (error) { console.error('getCheckIns:', error); return [] }
 
   return data
     .filter(row => row.clients?.profissional_id === profissionalId)
@@ -38,7 +38,7 @@ export async function getProgressData(clienteId: string, questionarioId: string)
     .order('data_resposta', { ascending: true })
     .limit(12)
 
-  if (error) return progressData
+  if (error) return []
 
   return data.map((row, i) => ({
     semana: `S${i + 1}`,

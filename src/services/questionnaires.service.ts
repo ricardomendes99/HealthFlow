@@ -17,7 +17,7 @@ export async function getQuestionnaires(profissionalId: string): Promise<Questio
     .eq('profissional_id', profissionalId)
     .order('created_at', { ascending: false })
 
-  if (error) { console.error('getQuestionnaires:', error); return mockQuestionnaires }
+  if (error) { console.error('getQuestionnaires:', error); return [] }
 
   return data.map(row => ({
     id: row.id, profissional_id: row.profissional_id,
