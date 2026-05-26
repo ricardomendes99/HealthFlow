@@ -29,8 +29,8 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/app/lembretes', icon: Bell, label: 'Lembretes' },
   { to: '/app/area-cliente', icon: Layout, label: 'Área do Cliente' },
   { to: '/app/tutoriais', icon: BookOpen, label: 'Tutoriais' },
-  { to: '#', icon: MessageSquare, label: 'Falar com o Suporte' },
-  { to: '#', icon: Gift, label: 'Indique e Ganhe' },
+  { to: '/app/suporte', icon: MessageSquare, label: 'Falar com o Suporte' },
+  { to: '/app/indique', icon: Gift, label: 'Indique e Ganhe' },
 ]
 
 export default function AppLayout() {
