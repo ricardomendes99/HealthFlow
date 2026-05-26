@@ -30,10 +30,7 @@ export async function getProfessionalBySlug(slug: string): Promise<ProfessionalP
 }
 
 export async function getActiveQuestionnaires(profissionalId: string): Promise<Questionnaire[]> {
-  if (!supabase) {
-    const { mockQuestionnaires } = await import('../data/mockData')
-    return mockQuestionnaires.filter(q => q.status === 'ativo')
-  }
+  if (!supabase) return []
 
   const { data, error } = await supabase
     .from('questionnaires')
@@ -66,7 +63,7 @@ export async function getActiveQuestionnaires(profissionalId: string): Promise<Q
 }
 
 export async function getClientByWhatsApp(profissionalId: string, whatsapp: string): Promise<{ id: string; nome: string } | null> {
-  if (!supabase) return { id: '1', nome: 'Ana Carolina' }
+  if (!supabase) return null
 
   const clean = whatsapp.replace(/\D/g, '')
   const { data, error } = await supabase
