@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Layout, ExternalLink, Camera, Palette } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Layout, ExternalLink, Camera, Palette, Upload, X } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { APP_DOMAIN, supabase } from '../../lib/supabase'
 
@@ -14,7 +14,61 @@ export default function ClientAreaPage() {
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
 
+  const [fotoUrl, setFotoUrl] = useState<string | null>(null)
+  const [capaUrl, setCapaUrl] = useState<string | null>(null)
+  const [uploadingFoto, setUploadingFoto] = useState(false)
+  const [uploadingCapa, setUploadingCapa] = useState(false)
+
+  const fotoRef = useRef<HTMLInputElement>(null)
+  const capaRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!user || !supabase) return
+    supabase.from('professionals')
+      .select('slug, titulo_profissao, cor_primaria, cor_secundaria, foto_perfil, capa_cliente')
+      .eq('id', user.id)
+      .single()
+      .then(({ data }) => {
+        if (!data) return
+        setForm({
+          slug: data.slug || user.slug || '',
+          titulo: data.titulo_profissao || user.profissao || '',
+          corPrimaria: data.cor_primaria || '#2563eb',
+          corSecundaria: data.cor_secundaria || '#1d4ed8',
+        })
+        if (data.foto_perfil) setFotoUrl(data.foto_perfil)
+        if (data.capa_cliente) setCapaUrl(data.capa_cliente)
+      })
+  }, [user])
+
   const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }))
+
+  const uploadImage = async (
+    file: File,
+    field: 'foto_perfil' | 'capa_cliente',
+    setUrl: (u: string) => void,
+    setUploading: (b: boolean) => void,
+  ) => {
+    if (!user || !supabase) return
+    setUploading(true)
+    try {
+      const ext = file.name.split('.').pop()
+      const path = `${user.id}/${field}.${ext}`
+      const { error: upErr } = await supabase.storage
+        .from('professionals')
+        .upload(path, file, { upsert: true, contentType: file.type })
+      if (upErr) { console.error('upload error:', upErr); setUploading(false); return }
+
+      const { data: urlData } = supabase.storage.from('professionals').getPublicUrl(path)
+      const publicUrl = urlData.publicUrl + '?t=' + Date.now()
+
+      await supabase.from('professionals').update({ [field]: urlData.publicUrl }).eq('id', user.id)
+      setUrl(publicUrl)
+    } catch (e) {
+      console.error('uploadImage failed:', e)
+    }
+    setUploading(false)
+  }
 
   const save = async () => {
     if (!user) return
@@ -86,21 +140,93 @@ export default function ClientAreaPage() {
           {/* Fotos */}
           <div className="bg-white rounded-2xl border border-slate-200 p-6">
             <h2 className="font-semibold text-slate-800 mb-4">Imagens</h2>
+            {!supabase && (
+              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-4">
+                Upload de imagens requer Supabase configurado. Execute o SQL de criação do bucket e defina as variáveis de ambiente.
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-4">
+              {/* Foto de perfil */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Foto de perfil</label>
-                <div className="border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center hover:border-primary-300 cursor-pointer transition-colors group">
-                  <Camera className="w-8 h-8 text-slate-300 group-hover:text-primary-400 mx-auto mb-2 transition-colors" />
-                  <p className="text-xs text-slate-400">400x400px · máx 8MB</p>
-                  <p className="text-xs text-primary-500 mt-1 font-medium">Clique para enviar</p>
+                <input
+                  ref={fotoRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={e => {
+                    const f = e.target.files?.[0]
+                    if (f) uploadImage(f, 'foto_perfil', setFotoUrl, setUploadingFoto)
+                  }}
+                />
+                <div
+                  onClick={() => supabase && fotoRef.current?.click()}
+                  className={`relative border-2 border-dashed rounded-2xl p-4 text-center transition-colors group ${supabase ? 'hover:border-primary-300 cursor-pointer' : 'opacity-60 cursor-not-allowed'} ${fotoUrl ? 'border-primary-300' : 'border-slate-200'}`}
+                >
+                  {fotoUrl ? (
+                    <>
+                      <img src={fotoUrl} alt="Foto de perfil" className="w-20 h-20 rounded-full object-cover mx-auto mb-2" />
+                      <button
+                        onClick={e => { e.stopPropagation(); setFotoUrl(null); if (supabase) supabase.from('professionals').update({ foto_perfil: null }).eq('id', user?.id) }}
+                        className="absolute top-2 right-2 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center text-white"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  ) : uploadingFoto ? (
+                    <div className="py-3">
+                      <Upload className="w-8 h-8 text-primary-400 mx-auto mb-2 animate-pulse" />
+                      <p className="text-xs text-primary-500">Enviando...</p>
+                    </div>
+                  ) : (
+                    <>
+                      <Camera className="w-8 h-8 text-slate-300 group-hover:text-primary-400 mx-auto mb-2 transition-colors" />
+                      <p className="text-xs text-slate-400">400x400px · máx 8MB</p>
+                      <p className="text-xs text-primary-500 mt-1 font-medium">Clique para enviar</p>
+                    </>
+                  )}
                 </div>
               </div>
+
+              {/* Capa */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Capa da área do cliente</label>
-                <div className="border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center hover:border-primary-300 cursor-pointer transition-colors group">
-                  <Camera className="w-8 h-8 text-slate-300 group-hover:text-primary-400 mx-auto mb-2 transition-colors" />
-                  <p className="text-xs text-slate-400">1080x1920px · máx 8MB</p>
-                  <p className="text-xs text-primary-500 mt-1 font-medium">Clique para enviar</p>
+                <input
+                  ref={capaRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={e => {
+                    const f = e.target.files?.[0]
+                    if (f) uploadImage(f, 'capa_cliente', setCapaUrl, setUploadingCapa)
+                  }}
+                />
+                <div
+                  onClick={() => supabase && capaRef.current?.click()}
+                  className={`relative border-2 border-dashed rounded-2xl p-4 text-center transition-colors group ${supabase ? 'hover:border-primary-300 cursor-pointer' : 'opacity-60 cursor-not-allowed'} ${capaUrl ? 'border-primary-300' : 'border-slate-200'}`}
+                >
+                  {capaUrl ? (
+                    <>
+                      <img src={capaUrl} alt="Capa" className="w-full h-20 rounded-xl object-cover mb-2" />
+                      <button
+                        onClick={e => { e.stopPropagation(); setCapaUrl(null); if (supabase) supabase.from('professionals').update({ capa_cliente: null }).eq('id', user?.id) }}
+                        className="absolute top-2 right-2 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center text-white"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  ) : uploadingCapa ? (
+                    <div className="py-3">
+                      <Upload className="w-8 h-8 text-primary-400 mx-auto mb-2 animate-pulse" />
+                      <p className="text-xs text-primary-500">Enviando...</p>
+                    </div>
+                  ) : (
+                    <>
+                      <Camera className="w-8 h-8 text-slate-300 group-hover:text-primary-400 mx-auto mb-2 transition-colors" />
+                      <p className="text-xs text-slate-400">1080x1920px · máx 8MB</p>
+                      <p className="text-xs text-primary-500 mt-1 font-medium">Clique para enviar</p>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -140,13 +266,18 @@ export default function ClientAreaPage() {
           <div className="sticky top-6">
             <h2 className="font-semibold text-slate-700 text-sm mb-3">Prévia da área do cliente</h2>
             <div className="bg-slate-100 rounded-3xl p-4 flex justify-center">
-              <div className="w-56 bg-white rounded-3xl shadow-xl overflow-hidden" style={{ '--preview-primary': form.corPrimaria } as React.CSSProperties}>
+              <div className="w-56 bg-white rounded-3xl shadow-xl overflow-hidden">
                 {/* Capa */}
-                <div className="h-28 flex items-end p-3" style={{ background: `linear-gradient(to bottom, ${form.corPrimaria}88, ${form.corPrimaria})` }}>
-                  <div>
-                    <div className="w-12 h-12 bg-white/30 rounded-full mb-2 flex items-center justify-center text-white font-bold text-lg">
-                      {user?.nome?.charAt(0)}
-                    </div>
+                <div className="h-28 flex items-end p-3 relative" style={{ background: capaUrl ? `url(${capaUrl}) center/cover` : `linear-gradient(to bottom, ${form.corPrimaria}88, ${form.corPrimaria})` }}>
+                  {capaUrl && <div className="absolute inset-0" style={{ background: `linear-gradient(to bottom, transparent 30%, ${form.corPrimaria}cc)` }} />}
+                  <div className="relative z-10">
+                    {fotoUrl ? (
+                      <img src={fotoUrl} alt="" className="w-12 h-12 rounded-full object-cover mb-2 border-2 border-white/40" />
+                    ) : (
+                      <div className="w-12 h-12 bg-white/30 rounded-full mb-2 flex items-center justify-center text-white font-bold text-lg">
+                        {user?.nome?.charAt(0)}
+                      </div>
+                    )}
                     <div className="text-white text-sm font-bold">{user?.nome}</div>
                     <div className="text-white/70 text-xs">{form.titulo}</div>
                   </div>
