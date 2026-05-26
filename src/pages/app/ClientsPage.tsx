@@ -60,6 +60,17 @@ export default function ClientsPage() {
     return 'bg-amber-100 text-amber-700'
   }
 
+  const expirationInfo = (finaliza_em?: string) => {
+    if (!finaliza_em) return null
+    const hoje = new Date(); hoje.setHours(0, 0, 0, 0)
+    const fim = new Date(finaliza_em + 'T00:00:00')
+    const dias = Math.ceil((fim.getTime() - hoje.getTime()) / 86400000)
+    const label = fim.toLocaleDateString('pt-BR')
+    if (dias < 0) return { label, cls: 'text-red-600 bg-red-50', tip: 'Vencido' }
+    if (dias <= 7) return { label, cls: 'text-amber-600 bg-amber-50', tip: `Vence em ${dias}d` }
+    return { label, cls: 'text-slate-600 bg-slate-50', tip: `${dias} dias restantes` }
+  }
+
   return (
     <div className="p-6">
       {/* Header */}
@@ -117,16 +128,17 @@ export default function ClientsPage() {
             <tr className="bg-slate-50 border-b border-slate-200">
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Nome</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide hidden md:table-cell">Serviço</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide hidden lg:table-cell">Finaliza em</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide hidden sm:table-cell">Status</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide hidden lg:table-cell">Observação</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide hidden xl:table-cell">Observação</th>
               <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Ações</th>
             </tr>
           </thead>
           <tbody>
             {paginated.length === 0 ? (
-              <tr><td colSpan={5} className="text-center py-12 text-slate-400 text-sm">Nenhum cliente encontrado</td></tr>
+              <tr><td colSpan={6} className="text-center py-12 text-slate-400 text-sm">Nenhum cliente encontrado</td></tr>
             ) : paginated.map((c, i) => (
-              <tr key={c.id} className={`border-b border-slate-100 hover:bg-slate-50 transition-colors ${i % 2 === 0 ? '' : 'bg-slate-50/50'}`}>
+              <tr key={c.id} className={`border-b border-slate-100 hover:bg-slate-50 transition-colors`}>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center text-primary-700 text-xs font-bold flex-shrink-0">
@@ -138,12 +150,23 @@ export default function ClientsPage() {
                 <td className="px-4 py-3 hidden md:table-cell">
                   <span className="text-sm text-slate-500">{c.servico || '—'}</span>
                 </td>
+                <td className="px-4 py-3 hidden lg:table-cell">
+                  {(() => {
+                    const exp = expirationInfo(c.finaliza_em)
+                    if (!exp) return <span className="text-sm text-slate-400">—</span>
+                    return (
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-lg ${exp.cls}`} title={exp.tip}>
+                        {exp.label}
+                      </span>
+                    )
+                  })()}
+                </td>
                 <td className="px-4 py-3 hidden sm:table-cell">
                   <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusColor(c.status)}`}>
                     {c.status === 'ativo' ? '● Ativo' : c.status === 'finalizado' ? 'Finalizado' : 'Inativo'}
                   </span>
                 </td>
-                <td className="px-4 py-3 hidden lg:table-cell">
+                <td className="px-4 py-3 hidden xl:table-cell">
                   <span className="text-sm text-slate-500">{c.observacao || '—'}</span>
                 </td>
                 <td className="px-4 py-3">

@@ -7,24 +7,31 @@ export async function getClients(profissionalId: string): Promise<Client[]> {
 
   const { data, error } = await supabase
     .from('clients')
-    .select('*, services(nome)')
+    .select('*, services(nome, validade_dias)')
     .eq('profissional_id', profissionalId)
     .order('nome')
 
   if (error) { console.error('getClients:', error); return [] }
 
-  return data.map(row => ({
-    id:              row.id,
-    profissional_id: row.profissional_id,
-    nome:            row.nome,
-    whatsapp:        row.whatsapp ?? '',
-    email:           row.email ?? '',
-    observacao:      row.observacao ?? undefined,
-    status:          row.status as Client['status'],
-    servico:         row.services?.nome ?? undefined,
-    data_criacao:    row.created_at.slice(0, 10),
-    flag:            row.flag ?? false,
-  }))
+  return data.map(row => {
+    const validade = row.services?.validade_dias
+    const finaliza_em = validade
+      ? new Date(new Date(row.created_at).getTime() + validade * 86400000).toISOString().slice(0, 10)
+      : undefined
+    return {
+      id:              row.id,
+      profissional_id: row.profissional_id,
+      nome:            row.nome,
+      whatsapp:        row.whatsapp ?? '',
+      email:           row.email ?? '',
+      observacao:      row.observacao ?? undefined,
+      status:          row.status as Client['status'],
+      servico:         row.services?.nome ?? undefined,
+      finaliza_em,
+      data_criacao:    row.created_at.slice(0, 10),
+      flag:            row.flag ?? false,
+    }
+  })
 }
 
 export async function addClient(
