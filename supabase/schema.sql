@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS professionals (
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+DROP TRIGGER IF EXISTS trg_professionals_updated_at ON professionals;
 CREATE TRIGGER trg_professionals_updated_at
   BEFORE UPDATE ON professionals
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
@@ -62,6 +63,7 @@ CREATE TABLE IF NOT EXISTS services (
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+DROP TRIGGER IF EXISTS trg_services_updated_at ON services;
 CREATE TRIGGER trg_services_updated_at
   BEFORE UPDATE ON services
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
@@ -87,6 +89,7 @@ CREATE TABLE IF NOT EXISTS clients (
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+DROP TRIGGER IF EXISTS trg_clients_updated_at ON clients;
 CREATE TRIGGER trg_clients_updated_at
   BEFORE UPDATE ON clients
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
@@ -108,6 +111,7 @@ CREATE TABLE IF NOT EXISTS questionnaires (
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+DROP TRIGGER IF EXISTS trg_questionnaires_updated_at ON questionnaires;
 CREATE TRIGGER trg_questionnaires_updated_at
   BEFORE UPDATE ON questionnaires
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
@@ -196,6 +200,7 @@ CREATE TABLE IF NOT EXISTS reminders (
   updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+DROP TRIGGER IF EXISTS trg_reminders_updated_at ON reminders;
 CREATE TRIGGER trg_reminders_updated_at
   BEFORE UPDATE ON reminders
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
