@@ -22,6 +22,7 @@ export interface Client {
   observacao?: string
   status: 'ativo' | 'finalizado' | 'inativo'
   servico?: string
+  service_id?: string
   finaliza_em?: string
   data_criacao: string
   flag?: boolean

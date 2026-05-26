@@ -27,6 +27,7 @@ export async function getClients(profissionalId: string): Promise<Client[]> {
       observacao:      row.observacao ?? undefined,
       status:          row.status as Client['status'],
       servico:         row.services?.nome ?? undefined,
+      service_id:      row.service_id ?? undefined,
       finaliza_em,
       data_criacao:    row.created_at.slice(0, 10),
       flag:            row.flag ?? false,
@@ -36,13 +37,13 @@ export async function getClients(profissionalId: string): Promise<Client[]> {
 
 export async function addClient(
   profissionalId: string,
-  data: { nome: string; whatsapp: string; email: string; observacao?: string; servico?: string }
+  data: { nome: string; whatsapp: string; email: string; observacao?: string; servico?: string; service_id?: string }
 ): Promise<Client | null> {
   if (!supabase) {
     const novo: Client = {
       id: String(Date.now()), profissional_id: profissionalId,
       nome: data.nome, whatsapp: data.whatsapp, email: data.email,
-      observacao: data.observacao, servico: data.servico,
+      observacao: data.observacao, servico: data.servico, service_id: data.service_id,
       status: 'ativo', data_criacao: new Date().toISOString().slice(0, 10), flag: false,
     }
     mockClients.unshift(novo)
@@ -51,17 +52,38 @@ export async function addClient(
 
   const { data: row, error } = await supabase
     .from('clients')
-    .insert({ profissional_id: profissionalId, nome: data.nome, whatsapp: data.whatsapp, email: data.email, observacao: data.observacao })
-    .select()
+    .insert({
+      profissional_id: profissionalId,
+      nome: data.nome,
+      whatsapp: data.whatsapp,
+      email: data.email,
+      observacao: data.observacao,
+      service_id: data.service_id || null,
+    })
+    .select('*, services(nome, validade_dias)')
     .single()
 
   if (error) { console.error('addClient:', error); return null }
-  return { ...row, servico: data.servico, data_criacao: row.created_at.slice(0, 10) }
+
+  const validade = (row as any).services?.validade_dias
+  const finaliza_em = validade
+    ? new Date(new Date(row.created_at).getTime() + validade * 86400000).toISOString().slice(0, 10)
+    : undefined
+
+  return {
+    id: row.id, profissional_id: row.profissional_id,
+    nome: row.nome, whatsapp: row.whatsapp ?? '', email: row.email ?? '',
+    observacao: row.observacao ?? undefined,
+    status: row.status as Client['status'],
+    servico: (row as any).services?.nome ?? undefined,
+    service_id: row.service_id ?? undefined,
+    finaliza_em, data_criacao: row.created_at.slice(0, 10), flag: row.flag ?? false,
+  }
 }
 
 export async function updateClient(
   id: string,
-  data: Partial<Pick<Client, 'nome' | 'whatsapp' | 'email' | 'observacao' | 'servico' | 'status'>>
+  data: Partial<Pick<Client, 'nome' | 'whatsapp' | 'email' | 'observacao' | 'servico' | 'service_id' | 'status'>>
 ): Promise<void> {
   if (!supabase) {
     const c = mockClients.find(c => c.id === id)
@@ -69,7 +91,10 @@ export async function updateClient(
     return
   }
   const { servico: _, ...dbFields } = data
-  await supabase.from('clients').update(dbFields).eq('id', id)
+  await supabase.from('clients').update({
+    ...dbFields,
+    service_id: data.service_id || null,
+  }).eq('id', id)
 }
 
 export async function deleteClient(id: string): Promise<void> {

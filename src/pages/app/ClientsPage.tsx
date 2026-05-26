@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { Users, Plus, Search, MessageSquare, Flag, Upload, ChevronLeft, ChevronRight, X, FileText, CheckCircle, AlertCircle, Pencil, Trash2 } from 'lucide-react'
 import { getClients, addClient as addClientSvc, updateClient as updateClientSvc, deleteClient as deleteClientSvc, changeClientStatus, toggleClientFlag } from '../../services/clients.service'
+import { getServices } from '../../services/services.service'
 import { useAuth } from '../../context/AuthContext'
-import type { Client } from '../../types'
+import type { Client, Service } from '../../types'
 
 type Tab = 'todos' | 'ativo' | 'finalizado' | 'inativo'
 
@@ -17,7 +18,7 @@ const PAGE_SIZE = 15
 
 type ImportStatus = { imported: number; failed: number; errors: string[] } | null
 
-const EMPTY_FORM = { nome: '', whatsapp: '', email: '', observacao: '', servico: '', status: 'ativo' as Client['status'] }
+const EMPTY_FORM = { nome: '', whatsapp: '', email: '', observacao: '', service_id: '', status: 'ativo' as Client['status'] }
 
 export default function ClientsPage() {
   const { user } = useAuth()
@@ -25,6 +26,7 @@ export default function ClientsPage() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [clients, setClients] = useState<Client[]>([])
+  const [services, setServices] = useState<Service[]>([])
   const [loading, setLoading] = useState(true)
 
   const [showAddModal, setShowAddModal] = useState(false)
@@ -42,7 +44,11 @@ export default function ClientsPage() {
 
   useEffect(() => {
     if (!user) return
-    getClients(user.id).then(data => { setClients(data); setLoading(false) })
+    Promise.all([getClients(user.id), getServices(user.id)]).then(([clientData, serviceData]) => {
+      setClients(clientData)
+      setServices(serviceData.filter(s => s.status === 'ativo'))
+      setLoading(false)
+    })
   }, [user])
 
   const filtered = useMemo(() => {
@@ -61,14 +67,19 @@ export default function ClientsPage() {
     setClients(prev => prev.map(cl => cl.id === id ? { ...cl, flag: !cl.flag } : cl))
   }
 
+  const resolveServico = (service_id: string) => services.find(s => s.id === service_id)?.nome
+
   const handleAdd = async () => {
     if (!addForm.nome || !user) return
     setFormError('')
     setSaving(true)
-    const added = await addClientSvc(user.id, addForm)
+    const added = await addClientSvc(user.id, {
+      ...addForm,
+      servico: resolveServico(addForm.service_id),
+    })
     setSaving(false)
     if (added) {
-      setClients(prev => [added, ...prev])
+      setClients(prev => [{ ...added, servico: resolveServico(addForm.service_id) ?? added.servico }, ...prev])
       setAddForm(EMPTY_FORM)
       setShowAddModal(false)
     } else {
@@ -78,7 +89,7 @@ export default function ClientsPage() {
 
   const openEdit = (c: Client) => {
     setEditingClient(c)
-    setEditForm({ nome: c.nome, whatsapp: c.whatsapp || '', email: c.email || '', observacao: c.observacao || '', servico: c.servico || '', status: c.status })
+    setEditForm({ nome: c.nome, whatsapp: c.whatsapp || '', email: c.email || '', observacao: c.observacao || '', service_id: c.service_id || '', status: c.status })
     setFormError('')
     setShowEditModal(true)
   }
@@ -92,7 +103,10 @@ export default function ClientsPage() {
       await changeClientStatus(editingClient.id, editForm.status)
     }
     setSaving(false)
-    setClients(prev => prev.map(c => c.id === editingClient.id ? { ...c, ...editForm } : c))
+    setClients(prev => prev.map(c => c.id === editingClient.id
+      ? { ...c, ...editForm, servico: resolveServico(editForm.service_id) ?? c.servico }
+      : c
+    ))
     setShowEditModal(false)
     setEditingClient(null)
   }
@@ -129,6 +143,7 @@ export default function ClientsPage() {
         whatsapp: wppIdx >= 0 ? (cols[wppIdx] ?? '') : '',
         email: emailIdx >= 0 ? (cols[emailIdx] ?? '') : '',
         observacao: obsIdx >= 0 ? (cols[obsIdx] ?? '') : '',
+        service_id: undefined,
       })
       if (added) { imported++; setClients(prev => [added, ...prev]) }
       else { failed++; errors.push(`Linha ${i + 1}: ${nome}`) }
@@ -160,7 +175,6 @@ export default function ClientsPage() {
         { label: 'Nome completo *', key: 'nome', placeholder: 'Nome do paciente' },
         { label: 'WhatsApp', key: 'whatsapp', placeholder: '71999990000' },
         { label: 'E-mail', key: 'email', placeholder: 'paciente@email.com' },
-        { label: 'Serviço', key: 'servico', placeholder: 'Plano associado' },
         { label: 'Observação', key: 'observacao', placeholder: 'Ex: atleta, vegano...' },
       ] as const).map(f => (
         <div key={f.key}>
@@ -173,6 +187,19 @@ export default function ClientsPage() {
           />
         </div>
       ))}
+      <div>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Serviço</label>
+        <select
+          value={form.service_id}
+          onChange={e => setForm(prev => ({ ...prev, service_id: e.target.value }))}
+          className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300 bg-white"
+        >
+          <option value="">Sem serviço</option>
+          {services.map(s => (
+            <option key={s.id} value={s.id}>{s.nome} — R$ {s.preco}</option>
+          ))}
+        </select>
+      </div>
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
         <select
