@@ -1,19 +1,31 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Briefcase, Plus, Search, Pencil, X } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { mockServices, chartData, mockFinancialEntries } from '../../data/mockData'
-import type { Service } from '../../types'
+import { getServices, saveService, getFinancialEntries, getChartData } from '../../services/services.service'
+import { useAuth } from '../../context/AuthContext'
+import { chartData as mockChartData } from '../../data/mockData'
+import type { Service, FinancialEntry } from '../../types'
 
 export default function ServicesPage() {
-  const [services, setServices] = useState<Service[]>(mockServices)
+  const { user } = useAuth()
+  const [services, setServices] = useState<Service[]>([])
+  const [financialEntries, setFinancialEntries] = useState<FinancialEntry[]>([])
+  const [chart, setChart] = useState(mockChartData)
   const [search, setSearch] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [form, setForm] = useState({ nome: '', validade_dias: '', modalidade: 'online', preco: '', status: 'ativo' })
 
+  useEffect(() => {
+    if (!user) return
+    getServices(user.id).then(setServices)
+    getFinancialEntries(user.id).then(setFinancialEntries)
+    getChartData(user.id).then(setChart)
+  }, [user])
+
   const filtered = services.filter(s => !search || s.nome.toLowerCase().includes(search.toLowerCase()))
 
-  const totalPeriod = mockFinancialEntries.reduce((a, e) => a + e.valor, 0)
+  const totalPeriod = financialEntries.reduce((a, e) => a + e.valor, 0)
   const totalVendas = services.reduce((a, s) => a + s.vendas, 0)
   const ticketMedio = totalVendas > 0 ? totalPeriod / totalVendas : 0
 
@@ -29,19 +41,16 @@ export default function ServicesPage() {
     setShowModal(true)
   }
 
-  const save = () => {
-    if (!form.nome) return
-    if (editId) {
-      setServices(prev => prev.map(s => s.id === editId ? { ...s, ...form, validade_dias: Number(form.validade_dias), preco: Number(form.preco) } as Service : s))
+  const save = async () => {
+    if (!form.nome || !user) return
+    const payload = { nome: form.nome, validade_dias: Number(form.validade_dias), preco: Number(form.preco), modalidade: form.modalidade, status: form.status }
+    const saved = await saveService(user.id, payload, editId)
+    if (saved) {
+      if (editId) setServices(prev => prev.map(s => s.id === editId ? { ...s, ...saved } : s))
+      else setServices(prev => [saved, ...prev])
     } else {
-      const novo: Service = {
-        id: String(Date.now()), profissional_id: '1',
-        nome: form.nome, status: form.status as 'ativo' | 'inativo',
-        validade_dias: Number(form.validade_dias), modalidade: form.modalidade as 'presencial' | 'online',
-        preco: Number(form.preco), vendas: 0, faturamento: 0,
-        data_criacao: new Date().toISOString().split('T')[0]
-      }
-      setServices(prev => [novo, ...prev])
+      if (editId) setServices(prev => prev.map(s => s.id === editId ? { ...s, ...payload, validade_dias: Number(form.validade_dias), preco: Number(form.preco) } as Service : s))
+      else setServices(prev => [{ id: String(Date.now()), profissional_id: user.id, vendas: 0, faturamento: 0, data_criacao: new Date().toISOString().slice(0,10), ...payload, status: form.status as 'ativo'|'inativo', modalidade: form.modalidade as 'presencial'|'online' }, ...prev])
     }
     setShowModal(false)
   }
@@ -83,7 +92,7 @@ export default function ServicesPage() {
             </div>
           </div>
           <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={chartData}>
+            <BarChart data={chart}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
               <XAxis dataKey="mes" tick={{ fontSize: 12, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 12, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => `R$${(v/1000).toFixed(0)}k`} />
@@ -100,7 +109,7 @@ export default function ServicesPage() {
             <button className="text-xs text-primary-600 hover:underline">Ver todas</button>
           </div>
           <div className="space-y-3">
-            {mockFinancialEntries.slice(0, 6).map(e => (
+            {financialEntries.slice(0, 6).map(e => (
               <div key={e.id} className="flex items-center justify-between">
                 <div>
                   <div className="text-sm font-medium text-slate-700">{e.cliente_nome}</div>

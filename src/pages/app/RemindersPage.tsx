@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Bell, Plus, X, Clock, MessageSquare, Mail } from 'lucide-react'
-import { mockReminders } from '../../data/mockData'
+import { getReminders, deleteReminder } from '../../services/reminders.service'
+import { useAuth } from '../../context/AuthContext'
 import type { Reminder } from '../../types'
 
 const STATUS_MAP: Record<Reminder['status'], { label: string; cls: string }> = {
@@ -16,14 +17,20 @@ const TIPO_MAP: Record<Reminder['tipo'], string> = {
 }
 
 export default function RemindersPage() {
-  const [reminders, setReminders] = useState<Reminder[]>(mockReminders)
+  const { user } = useAuth()
+  const [reminders, setReminders] = useState<Reminder[]>([])
   const [showModal, setShowModal] = useState(false)
   const [form, setForm] = useState({ cliente_nome: '', questionario_nome: '', data_envio: '', hora_envio: '08:00', tipo: 'inicial', canal: 'whatsapp' })
+
+  useEffect(() => {
+    if (!user) return
+    getReminders(user.id).then(setReminders)
+  }, [user])
 
   const addReminder = () => {
     if (!form.cliente_nome || !form.data_envio) return
     const r: Reminder = {
-      id: String(Date.now()), profissional_id: '1',
+      id: String(Date.now()), profissional_id: user?.id ?? '1',
       cliente_id: String(Date.now()), cliente_nome: form.cliente_nome,
       questionario_id: '1', questionario_nome: form.questionario_nome || 'Check-in Semanal',
       data_envio_programada: `${form.data_envio}T${form.hora_envio}:00`,
@@ -35,7 +42,10 @@ export default function RemindersPage() {
     setForm({ cliente_nome: '', questionario_nome: '', data_envio: '', hora_envio: '08:00', tipo: 'inicial', canal: 'whatsapp' })
   }
 
-  const del = (id: string) => setReminders(prev => prev.filter(r => r.id !== id))
+  const del = async (id: string) => {
+    await deleteReminder(id)
+    setReminders(prev => prev.filter(r => r.id !== id))
+  }
 
   const formatDate = (iso: string) => {
     const d = new Date(iso)

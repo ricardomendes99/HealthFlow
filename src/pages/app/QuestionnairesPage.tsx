@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { FileText, Plus, Search, Pencil, Trash2, ChevronDown, ChevronUp, X, GripVertical, LayoutTemplate, Apple, Dumbbell } from 'lucide-react'
-import { mockQuestionnaires } from '../../data/mockData'
+import { getQuestionnaires, saveQuestionnaire, deleteQuestionnaire } from '../../services/questionnaires.service'
+import { useAuth } from '../../context/AuthContext'
 import type { Questionnaire, Question, QuestionOption } from '../../types'
 
 // ── Templates por profissão ────────────────────────────────────────────────
@@ -85,8 +86,14 @@ const TRAINER_TEMPLATES: Omit<Questionnaire, 'id' | 'profissional_id' | 'data_cr
 ]
 
 export default function QuestionnairesPage() {
-  const [questionnaires, setQuestionnaires] = useState<Questionnaire[]>(mockQuestionnaires)
+  const { user } = useAuth()
+  const [questionnaires, setQuestionnaires] = useState<Questionnaire[]>([])
   const [search, setSearch] = useState('')
+
+  useEffect(() => {
+    if (!user) return
+    getQuestionnaires(user.id).then(setQuestionnaires)
+  }, [user])
   const [expanded, setExpanded] = useState<string | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [showTemplates, setShowTemplates] = useState(false)
@@ -113,17 +120,17 @@ export default function QuestionnairesPage() {
     setShowModal(true)
   }
 
-  const useTemplate = (template: Omit<Questionnaire, 'id' | 'profissional_id' | 'data_criacao'>) => {
-    const novo: Questionnaire = {
-      id: String(Date.now()),
-      profissional_id: '1',
-      nome: template.nome,
-      status: template.status,
-      total_perguntas: template.total_perguntas,
-      data_criacao: new Date().toISOString().split('T')[0],
-      perguntas: template.perguntas?.map(p => ({ ...p, questionario_id: String(Date.now()) })),
+  const useTemplate = async (template: Omit<Questionnaire, 'id' | 'profissional_id' | 'data_criacao'>) => {
+    if (!user) return
+    const perguntas = template.perguntas?.map(p => ({
+      texto: p.texto, tipo: p.tipo, ordem: p.ordem, peso_pontuacao: p.peso_pontuacao, opcoes: p.opcoes
+    })) ?? []
+    const saved = await saveQuestionnaire(user.id, template.nome, template.status, perguntas)
+    if (saved) setQuestionnaires(prev => [saved, ...prev])
+    else {
+      const novo: Questionnaire = { id: String(Date.now()), profissional_id: user.id, nome: template.nome, status: template.status, total_perguntas: template.total_perguntas, data_criacao: new Date().toISOString().slice(0,10), perguntas: template.perguntas }
+      setQuestionnaires(prev => [novo, ...prev])
     }
-    setQuestionnaires(prev => [novo, ...prev])
     setShowTemplates(false)
   }
 
@@ -153,23 +160,24 @@ export default function QuestionnairesPage() {
     ))
   }
 
-  const save = () => {
-    if (!form.nome) return
-    if (editingQ) {
-      setQuestionnaires(prev => prev.map(q => q.id === editingQ.id ? { ...q, ...form, status: form.status as 'ativo'|'inativo', total_perguntas: questions.length, perguntas: questions } : q))
+  const save = async () => {
+    if (!form.nome || !user) return
+    const perguntas = questions.map(p => ({ texto: p.texto, tipo: p.tipo, ordem: p.ordem, peso_pontuacao: p.peso_pontuacao, opcoes: p.opcoes }))
+    const saved = await saveQuestionnaire(user.id, form.nome, form.status, perguntas, editingQ?.id)
+    if (saved) {
+      if (editingQ) setQuestionnaires(prev => prev.map(q => q.id === editingQ.id ? saved : q))
+      else setQuestionnaires(prev => [saved, ...prev])
     } else {
-      const novo: Questionnaire = {
-        id: String(Date.now()), profissional_id: '1',
-        nome: form.nome, status: form.status as 'ativo'|'inativo',
-        total_perguntas: questions.length, data_criacao: new Date().toISOString().split('T')[0],
-        perguntas: questions
-      }
-      setQuestionnaires(prev => [novo, ...prev])
+      if (editingQ) setQuestionnaires(prev => prev.map(q => q.id === editingQ.id ? { ...q, ...form, status: form.status as 'ativo'|'inativo', total_perguntas: questions.length, perguntas: questions } : q))
+      else setQuestionnaires(prev => [{ id: String(Date.now()), profissional_id: user.id, nome: form.nome, status: form.status as 'ativo'|'inativo', total_perguntas: questions.length, data_criacao: new Date().toISOString().slice(0,10), perguntas: questions }, ...prev])
     }
     setShowModal(false)
   }
 
-  const del = (id: string) => setQuestionnaires(prev => prev.filter(q => q.id !== id))
+  const del = async (id: string) => {
+    await deleteQuestionnaire(id)
+    setQuestionnaires(prev => prev.filter(q => q.id !== id))
+  }
 
   return (
     <div className="p-6">

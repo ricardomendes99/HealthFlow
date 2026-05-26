@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Users, Plus, Search, MessageSquare, Flag, Upload, ChevronLeft, ChevronRight, X } from 'lucide-react'
-import { mockClients } from '../../data/mockData'
+import { getClients, addClient as addClientSvc, toggleClientFlag } from '../../services/clients.service'
+import { useAuth } from '../../context/AuthContext'
 import type { Client } from '../../types'
 
 type Tab = 'todos' | 'ativo' | 'finalizado' | 'inativo'
@@ -15,12 +16,19 @@ const TABS: { key: Tab; label: string }[] = [
 const PAGE_SIZE = 15
 
 export default function ClientsPage() {
+  const { user } = useAuth()
   const [tab, setTab] = useState<Tab>('ativo')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
-  const [clients, setClients] = useState<Client[]>(mockClients)
+  const [clients, setClients] = useState<Client[]>([])
+  const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [newClient, setNewClient] = useState({ nome: '', whatsapp: '', email: '', observacao: '', servico: '' })
+
+  useEffect(() => {
+    if (!user) return
+    getClients(user.id).then(data => { setClients(data); setLoading(false) })
+  }, [user])
 
   const filtered = useMemo(() => {
     return clients
@@ -31,19 +39,17 @@ export default function ClientsPage() {
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-  const toggleFlag = (id: string) => {
-    setClients(prev => prev.map(c => c.id === id ? { ...c, flag: !c.flag } : c))
+  const toggleFlag = async (id: string) => {
+    const c = clients.find(cl => cl.id === id)
+    if (!c) return
+    await toggleClientFlag(id, !c.flag)
+    setClients(prev => prev.map(cl => cl.id === id ? { ...cl, flag: !cl.flag } : cl))
   }
 
-  const addClient = () => {
-    if (!newClient.nome) return
-    const c: Client = {
-      id: String(Date.now()), profissional_id: '1',
-      nome: newClient.nome, whatsapp: newClient.whatsapp, email: newClient.email,
-      observacao: newClient.observacao, servico: newClient.servico,
-      status: 'ativo', data_criacao: new Date().toISOString().split('T')[0], flag: false
-    }
-    setClients(prev => [c, ...prev])
+  const addClient = async () => {
+    if (!newClient.nome || !user) return
+    const added = await addClientSvc(user.id, newClient)
+    if (added) setClients(prev => [added, ...prev])
     setNewClient({ nome: '', whatsapp: '', email: '', observacao: '', servico: '' })
     setShowModal(false)
   }
