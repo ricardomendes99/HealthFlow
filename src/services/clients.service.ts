@@ -59,6 +59,37 @@ export async function addClient(
   return { ...row, servico: data.servico, data_criacao: row.created_at.slice(0, 10) }
 }
 
+export async function updateClient(
+  id: string,
+  data: Partial<Pick<Client, 'nome' | 'whatsapp' | 'email' | 'observacao' | 'servico' | 'status'>>
+): Promise<void> {
+  if (!supabase) {
+    const c = mockClients.find(c => c.id === id)
+    if (c) Object.assign(c, data)
+    return
+  }
+  const { servico: _, ...dbFields } = data
+  await supabase.from('clients').update(dbFields).eq('id', id)
+}
+
+export async function deleteClient(id: string): Promise<void> {
+  if (!supabase) {
+    const idx = mockClients.findIndex(c => c.id === id)
+    if (idx >= 0) mockClients.splice(idx, 1)
+    return
+  }
+  await supabase.from('clients').delete().eq('id', id)
+}
+
+export async function changeClientStatus(id: string, status: Client['status']): Promise<void> {
+  if (!supabase) {
+    const c = mockClients.find(c => c.id === id)
+    if (c) c.status = status
+    return
+  }
+  await supabase.from('clients').update({ status }).eq('id', id)
+}
+
 export async function toggleClientFlag(id: string, flag: boolean): Promise<void> {
   if (!supabase) {
     const c = mockClients.find(c => c.id === id)

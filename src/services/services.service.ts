@@ -27,7 +27,26 @@ export async function saveService(
   form: { nome: string; validade_dias: number; preco: number; modalidade: string; status: string },
   editId?: string | null
 ): Promise<Service | null> {
-  if (!supabase) return null
+  if (!supabase) {
+    if (editId) {
+      const idx = mockServices.findIndex(s => s.id === editId)
+      if (idx >= 0) {
+        Object.assign(mockServices[idx], form)
+        return mockServices[idx]
+      }
+      return null
+    }
+    const novo: Service = {
+      id: String(Date.now()), profissional_id: profissionalId,
+      vendas: 0, faturamento: 0,
+      data_criacao: new Date().toISOString().slice(0, 10),
+      nome: form.nome, validade_dias: form.validade_dias, preco: form.preco,
+      modalidade: form.modalidade as Service['modalidade'],
+      status: form.status as Service['status'],
+    }
+    mockServices.unshift(novo)
+    return novo
+  }
 
   const payload = {
     profissional_id: profissionalId,
@@ -46,6 +65,15 @@ export async function saveService(
   return { ...data, vendas: 0, faturamento: 0, data_criacao: data.created_at.slice(0, 10) } as Service
 }
 
+export async function deleteService(id: string): Promise<void> {
+  if (!supabase) {
+    const idx = mockServices.findIndex(s => s.id === id)
+    if (idx >= 0) mockServices.splice(idx, 1)
+    return
+  }
+  await supabase.from('services').delete().eq('id', id)
+}
+
 export async function getChartData(profissionalId: string) {
   if (!supabase) return chartData
 
@@ -59,7 +87,7 @@ export async function getChartData(profissionalId: string) {
 
   const months: Record<string, number> = {}
   for (const row of data) {
-    const key = row.data.slice(0, 7) // 'YYYY-MM'
+    const key = row.data.slice(0, 7)
     months[key] = (months[key] ?? 0) + Number(row.valor)
   }
   const names = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']

@@ -72,6 +72,10 @@ export async function addReminder(
 }
 
 export async function deleteReminder(id: string): Promise<void> {
-  if (!supabase) return
+  if (!supabase) {
+    const idx = mockReminders.findIndex(r => r.id === id)
+    if (idx >= 0) mockReminders.splice(idx, 1)
+    return
+  }
   await supabase.from('reminders').delete().eq('id', id)
 }

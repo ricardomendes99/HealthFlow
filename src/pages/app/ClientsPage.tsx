@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { Users, Plus, Search, MessageSquare, Flag, Upload, ChevronLeft, ChevronRight, X, FileText, CheckCircle, AlertCircle } from 'lucide-react'
-import { getClients, addClient as addClientSvc, toggleClientFlag } from '../../services/clients.service'
+import { Users, Plus, Search, MessageSquare, Flag, Upload, ChevronLeft, ChevronRight, X, FileText, CheckCircle, AlertCircle, Pencil, Trash2 } from 'lucide-react'
+import { getClients, addClient as addClientSvc, updateClient as updateClientSvc, deleteClient as deleteClientSvc, changeClientStatus, toggleClientFlag } from '../../services/clients.service'
 import { useAuth } from '../../context/AuthContext'
 import type { Client } from '../../types'
 
@@ -17,6 +17,8 @@ const PAGE_SIZE = 15
 
 type ImportStatus = { imported: number; failed: number; errors: string[] } | null
 
+const EMPTY_FORM = { nome: '', whatsapp: '', email: '', observacao: '', servico: '', status: 'ativo' as Client['status'] }
+
 export default function ClientsPage() {
   const { user } = useAuth()
   const [tab, setTab] = useState<Tab>('ativo')
@@ -24,12 +26,19 @@ export default function ClientsPage() {
   const [page, setPage] = useState(1)
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
-  const [showModal, setShowModal] = useState(false)
+
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editingClient, setEditingClient] = useState<Client | null>(null)
   const [showImport, setShowImport] = useState(false)
   const [importStatus, setImportStatus] = useState<ImportStatus>(null)
   const [importing, setImporting] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
-  const [newClient, setNewClient] = useState({ nome: '', whatsapp: '', email: '', observacao: '', servico: '' })
+
+  const [addForm, setAddForm] = useState(EMPTY_FORM)
+  const [editForm, setEditForm] = useState(EMPTY_FORM)
+  const [formError, setFormError] = useState('')
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (!user) return
@@ -52,19 +61,46 @@ export default function ClientsPage() {
     setClients(prev => prev.map(cl => cl.id === id ? { ...cl, flag: !cl.flag } : cl))
   }
 
-  const [addError, setAddError] = useState('')
-
-  const addClient = async () => {
-    if (!newClient.nome || !user) return
-    setAddError('')
-    const added = await addClientSvc(user.id, newClient)
+  const handleAdd = async () => {
+    if (!addForm.nome || !user) return
+    setFormError('')
+    setSaving(true)
+    const added = await addClientSvc(user.id, addForm)
+    setSaving(false)
     if (added) {
       setClients(prev => [added, ...prev])
-      setNewClient({ nome: '', whatsapp: '', email: '', observacao: '', servico: '' })
-      setShowModal(false)
+      setAddForm(EMPTY_FORM)
+      setShowAddModal(false)
     } else {
-      setAddError('Erro ao salvar cliente. Verifique a conexão com o banco.')
+      setFormError('Erro ao salvar cliente. Verifique a conexão com o banco.')
     }
+  }
+
+  const openEdit = (c: Client) => {
+    setEditingClient(c)
+    setEditForm({ nome: c.nome, whatsapp: c.whatsapp || '', email: c.email || '', observacao: c.observacao || '', servico: c.servico || '', status: c.status })
+    setFormError('')
+    setShowEditModal(true)
+  }
+
+  const handleEdit = async () => {
+    if (!editingClient || !editForm.nome) return
+    setFormError('')
+    setSaving(true)
+    await updateClientSvc(editingClient.id, editForm)
+    if (editForm.status !== editingClient.status) {
+      await changeClientStatus(editingClient.id, editForm.status)
+    }
+    setSaving(false)
+    setClients(prev => prev.map(c => c.id === editingClient.id ? { ...c, ...editForm } : c))
+    setShowEditModal(false)
+    setEditingClient(null)
+  }
+
+  const handleDelete = async (c: Client) => {
+    if (!window.confirm(`Excluir o cliente "${c.nome}"? Esta ação não pode ser desfeita.`)) return
+    await deleteClientSvc(c.id)
+    setClients(prev => prev.filter(cl => cl.id !== c.id))
   }
 
   const handleImportCSV = async (file: File) => {
@@ -74,7 +110,6 @@ export default function ClientsPage() {
     const text = await file.text()
     const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
     if (lines.length < 2) { setImporting(false); setImportStatus({ imported: 0, failed: 0, errors: ['Arquivo vazio ou sem dados'] }); return }
-    // Detect separator
     const sep = lines[0].includes(';') ? ';' : ','
     const headers = lines[0].split(sep).map(h => h.trim().toLowerCase().replace(/['"]/g, ''))
     const idx = (names: string[]) => names.reduce((found, n) => found >= 0 ? found : headers.indexOf(n), -1)
@@ -119,6 +154,40 @@ export default function ClientsPage() {
     return { label, cls: 'text-slate-600 bg-slate-50', tip: `${dias} dias restantes` }
   }
 
+  const ClientFormFields = ({ form, setForm }: { form: typeof EMPTY_FORM; setForm: React.Dispatch<React.SetStateAction<typeof EMPTY_FORM>> }) => (
+    <div className="p-6 space-y-4">
+      {([
+        { label: 'Nome completo *', key: 'nome', placeholder: 'Nome do paciente' },
+        { label: 'WhatsApp', key: 'whatsapp', placeholder: '71999990000' },
+        { label: 'E-mail', key: 'email', placeholder: 'paciente@email.com' },
+        { label: 'Serviço', key: 'servico', placeholder: 'Plano associado' },
+        { label: 'Observação', key: 'observacao', placeholder: 'Ex: atleta, vegano...' },
+      ] as const).map(f => (
+        <div key={f.key}>
+          <label className="block text-sm font-medium text-slate-700 mb-1">{f.label}</label>
+          <input
+            value={form[f.key as keyof typeof form] as string}
+            onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
+            placeholder={f.placeholder}
+            className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+          />
+        </div>
+      ))}
+      <div>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
+        <select
+          value={form.status}
+          onChange={e => setForm(prev => ({ ...prev, status: e.target.value as Client['status'] }))}
+          className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300 bg-white"
+        >
+          <option value="ativo">Ativo</option>
+          <option value="finalizado">Finalizado</option>
+          <option value="inativo">Inativo</option>
+        </select>
+      </div>
+    </div>
+  )
+
   return (
     <div className="p-6">
       {/* Header */}
@@ -136,7 +205,7 @@ export default function ClientsPage() {
           <button onClick={() => { setShowImport(true); setImportStatus(null) }} className="flex items-center gap-2 border border-slate-200 text-slate-600 text-sm font-medium px-4 py-2.5 rounded-xl hover:bg-slate-50 transition-colors">
             <Upload className="w-4 h-4" /> Importar
           </button>
-          <button onClick={() => setShowModal(true)} className="flex items-center gap-2 bg-primary-600 text-white text-sm font-semibold px-4 py-2.5 rounded-xl hover:bg-primary-700 transition-colors">
+          <button onClick={() => { setAddForm(EMPTY_FORM); setFormError(''); setShowAddModal(true) }} className="flex items-center gap-2 bg-primary-600 text-white text-sm font-semibold px-4 py-2.5 rounded-xl hover:bg-primary-700 transition-colors">
             <Plus className="w-4 h-4" /> Adicionar cliente
           </button>
         </div>
@@ -183,10 +252,12 @@ export default function ClientsPage() {
             </tr>
           </thead>
           <tbody>
-            {paginated.length === 0 ? (
+            {loading ? (
+              <tr><td colSpan={6} className="text-center py-12 text-slate-400 text-sm">Carregando...</td></tr>
+            ) : paginated.length === 0 ? (
               <tr><td colSpan={6} className="text-center py-12 text-slate-400 text-sm">Nenhum cliente encontrado</td></tr>
-            ) : paginated.map((c, i) => (
-              <tr key={c.id} className={`border-b border-slate-100 hover:bg-slate-50 transition-colors`}>
+            ) : paginated.map(c => (
+              <tr key={c.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center text-primary-700 text-xs font-bold flex-shrink-0">
@@ -218,12 +289,18 @@ export default function ClientsPage() {
                   <span className="text-sm text-slate-500">{c.observacao || '—'}</span>
                 </td>
                 <td className="px-4 py-3">
-                  <div className="flex items-center justify-center gap-2">
+                  <div className="flex items-center justify-center gap-1">
                     <a href={`https://wa.me/55${c.whatsapp}`} target="_blank" rel="noopener" className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="WhatsApp">
                       <MessageSquare className="w-4 h-4" />
                     </a>
                     <button onClick={() => toggleFlag(c.id)} className={`p-1.5 rounded-lg transition-colors ${c.flag ? 'text-red-500 bg-red-50' : 'text-slate-300 hover:text-slate-500 hover:bg-slate-100'}`} title="Flag">
                       <Flag className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => openEdit(c)} className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors" title="Editar">
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => handleDelete(c)} className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Excluir">
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </td>
@@ -317,38 +394,44 @@ export default function ClientsPage() {
       )}
 
       {/* Modal Adicionar */}
-      {showModal && (
+      {showAddModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
             <div className="flex items-center justify-between p-6 border-b border-slate-100">
               <h2 className="text-lg font-bold text-slate-900">Adicionar cliente</h2>
-              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
-            <div className="p-6 space-y-4">
-              {[
-                { label: 'Nome completo *', key: 'nome', placeholder: 'Nome do paciente' },
-                { label: 'WhatsApp', key: 'whatsapp', placeholder: '71999990000' },
-                { label: 'E-mail', key: 'email', placeholder: 'paciente@email.com' },
-                { label: 'Serviço', key: 'servico', placeholder: 'Plano associado' },
-                { label: 'Observação', key: 'observacao', placeholder: 'Ex: atleta, vegano...' },
-              ].map(f => (
-                <div key={f.key}>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">{f.label}</label>
-                  <input
-                    value={newClient[f.key as keyof typeof newClient]}
-                    onChange={e => setNewClient(prev => ({ ...prev, [f.key]: e.target.value }))}
-                    placeholder={f.placeholder}
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
-                  />
-                </div>
-              ))}
-            </div>
-            {addError && (
-              <p className="mx-6 text-xs text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2">{addError}</p>
+            <ClientFormFields form={addForm} setForm={setAddForm} />
+            {formError && (
+              <p className="mx-6 text-xs text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2">{formError}</p>
             )}
             <div className="flex gap-3 p-6 border-t border-slate-100">
-              <button onClick={() => { setShowModal(false); setAddError('') }} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-50">Cancelar</button>
-              <button onClick={addClient} className="flex-1 bg-primary-600 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-primary-700">Adicionar</button>
+              <button onClick={() => { setShowAddModal(false); setFormError('') }} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-50">Cancelar</button>
+              <button onClick={handleAdd} disabled={saving || !addForm.nome} className="flex-1 bg-primary-600 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-primary-700 disabled:opacity-50">
+                {saving ? 'Salvando...' : 'Adicionar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Editar */}
+      {showEditModal && editingClient && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between p-6 border-b border-slate-100">
+              <h2 className="text-lg font-bold text-slate-900">Editar cliente</h2>
+              <button onClick={() => setShowEditModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+            </div>
+            <ClientFormFields form={editForm} setForm={setEditForm} />
+            {formError && (
+              <p className="mx-6 text-xs text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2">{formError}</p>
+            )}
+            <div className="flex gap-3 p-6 border-t border-slate-100">
+              <button onClick={() => setShowEditModal(false)} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-50">Cancelar</button>
+              <button onClick={handleEdit} disabled={saving || !editForm.nome} className="flex-1 bg-primary-600 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-primary-700 disabled:opacity-50">
+                {saving ? 'Salvando...' : 'Salvar alterações'}
+              </button>
             </div>
           </div>
         </div>

@@ -41,13 +41,47 @@ export async function saveQuestionnaire(
   perguntas: Omit<Question, 'id' | 'questionario_id'>[],
   editId?: string | null
 ): Promise<Questionnaire | null> {
-  if (!supabase) return null
+  if (!supabase) {
+    if (editId) {
+      const idx = mockQuestionnaires.findIndex(q => q.id === editId)
+      if (idx >= 0) {
+        const updated: Questionnaire = {
+          ...mockQuestionnaires[idx],
+          nome, status: status as Questionnaire['status'],
+          total_perguntas: perguntas.length,
+          perguntas: perguntas.map((p, i) => ({
+            id: `mock-q-${Date.now()}-${i}`,
+            questionario_id: editId,
+            texto: p.texto, tipo: p.tipo, ordem: p.ordem,
+            peso_pontuacao: p.peso_pontuacao, opcoes: p.opcoes,
+          })),
+        }
+        mockQuestionnaires[idx] = updated
+        return updated
+      }
+      return null
+    }
+    const id = String(Date.now())
+    const novo: Questionnaire = {
+      id, profissional_id: profissionalId,
+      nome, status: status as Questionnaire['status'],
+      total_perguntas: perguntas.length,
+      data_criacao: new Date().toISOString().slice(0, 10),
+      perguntas: perguntas.map((p, i) => ({
+        id: `mock-q-${id}-${i}`,
+        questionario_id: id,
+        texto: p.texto, tipo: p.tipo, ordem: p.ordem,
+        peso_pontuacao: p.peso_pontuacao, opcoes: p.opcoes,
+      })),
+    }
+    mockQuestionnaires.unshift(novo)
+    return novo
+  }
 
   let questionarioId = editId
 
   if (editId) {
     await supabase.from('questionnaires').update({ nome, status }).eq('id', editId)
-    // Remove perguntas antigas e re-insere
     await supabase.from('questions').delete().eq('questionario_id', editId)
   } else {
     const { data, error } = await supabase
@@ -77,6 +111,10 @@ export async function saveQuestionnaire(
 }
 
 export async function deleteQuestionnaire(id: string): Promise<void> {
-  if (!supabase) return
+  if (!supabase) {
+    const idx = mockQuestionnaires.findIndex(q => q.id === id)
+    if (idx >= 0) mockQuestionnaires.splice(idx, 1)
+    return
+  }
   await supabase.from('questionnaires').delete().eq('id', id)
 }

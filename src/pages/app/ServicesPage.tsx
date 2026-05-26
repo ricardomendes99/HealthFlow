@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Briefcase, Plus, Search, Pencil, X } from 'lucide-react'
+import { Briefcase, Plus, Search, Pencil, X, Trash2 } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { getServices, saveService, getFinancialEntries, getChartData } from '../../services/services.service'
+import { getServices, saveService, deleteService as deleteServiceSvc, getFinancialEntries, getChartData } from '../../services/services.service'
 import { useAuth } from '../../context/AuthContext'
 import { chartData as mockChartData } from '../../data/mockData'
 import type { Service, FinancialEntry } from '../../types'
@@ -39,6 +39,12 @@ export default function ServicesPage() {
     setEditId(s.id)
     setForm({ nome: s.nome, validade_dias: String(s.validade_dias), modalidade: s.modalidade, preco: String(s.preco), status: s.status })
     setShowModal(true)
+  }
+
+  const handleDelete = async (s: Service) => {
+    if (!window.confirm(`Excluir o serviço "${s.nome}"? Esta ação não pode ser desfeita.`)) return
+    await deleteServiceSvc(s.id)
+    setServices(prev => prev.filter(sv => sv.id !== s.id))
   }
 
   const save = async () => {
@@ -153,9 +159,14 @@ export default function ServicesPage() {
                 <td className="px-4 py-3 text-sm text-slate-600">{s.vendas}</td>
                 <td className="px-4 py-3 text-sm font-semibold text-green-700">R$ {s.faturamento.toLocaleString('pt-BR')}</td>
                 <td className="px-4 py-3">
-                  <button onClick={() => openEdit(s)} className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors">
-                    <Pencil className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => openEdit(s)} className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors" title="Editar">
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => handleDelete(s)} className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Excluir">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
