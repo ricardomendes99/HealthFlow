@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import { Bell, Plus, X, Clock, MessageSquare, Mail } from 'lucide-react'
-import { getReminders, deleteReminder } from '../../services/reminders.service'
+import { getReminders, deleteReminder, addReminder as addReminderSvc } from '../../services/reminders.service'
+import { getClients } from '../../services/clients.service'
+import { getQuestionnaires } from '../../services/questionnaires.service'
 import { useAuth } from '../../context/AuthContext'
-import type { Reminder } from '../../types'
+import type { Reminder, Client, Questionnaire } from '../../types'
 
 const STATUS_MAP: Record<Reminder['status'], { label: string; cls: string }> = {
   pendente: { label: 'Pendente', cls: 'bg-amber-100 text-amber-700' },
@@ -16,30 +18,40 @@ const TIPO_MAP: Record<Reminder['tipo'], string> = {
   vencimento_plano: 'Vencimento de plano',
 }
 
+const EMPTY_FORM = { cliente_id: '', questionario_id: '', data_envio: '', hora_envio: '08:00', tipo: 'inicial', canal: 'whatsapp' }
+
 export default function RemindersPage() {
   const { user } = useAuth()
   const [reminders, setReminders] = useState<Reminder[]>([])
+  const [clients, setClients] = useState<Client[]>([])
+  const [questionnaires, setQuestionnaires] = useState<Questionnaire[]>([])
   const [showModal, setShowModal] = useState(false)
-  const [form, setForm] = useState({ cliente_nome: '', questionario_nome: '', data_envio: '', hora_envio: '08:00', tipo: 'inicial', canal: 'whatsapp' })
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState(EMPTY_FORM)
 
   useEffect(() => {
     if (!user) return
     getReminders(user.id).then(setReminders)
+    getClients(user.id).then(data => setClients(data.filter(c => c.status === 'ativo')))
+    getQuestionnaires(user.id).then(data => setQuestionnaires(data.filter(q => q.status === 'ativo')))
   }, [user])
 
-  const addReminder = () => {
-    if (!form.cliente_nome || !form.data_envio) return
-    const r: Reminder = {
-      id: String(Date.now()), profissional_id: user?.id ?? '1',
-      cliente_id: String(Date.now()), cliente_nome: form.cliente_nome,
-      questionario_id: '1', questionario_nome: form.questionario_nome || 'Check-in Semanal',
-      data_envio_programada: `${form.data_envio}T${form.hora_envio}:00`,
-      tipo: form.tipo as Reminder['tipo'], canal: form.canal as Reminder['canal'],
-      status: 'pendente'
-    }
-    setReminders(prev => [r, ...prev])
+  const handleAdd = async () => {
+    if (!form.cliente_id || !form.data_envio || !user) return
+    setSaving(true)
+    const dataHora = `${form.data_envio}T${form.hora_envio}:00`
+    await addReminderSvc(user.id, {
+      cliente_id: form.cliente_id,
+      questionario_id: form.questionario_id || (questionnaires[0]?.id ?? ''),
+      data_envio_programada: dataHora,
+      tipo: form.tipo,
+      canal: form.canal,
+    })
+    const updated = await getReminders(user.id)
+    setReminders(updated)
+    setSaving(false)
     setShowModal(false)
-    setForm({ cliente_nome: '', questionario_nome: '', data_envio: '', hora_envio: '08:00', tipo: 'inicial', canal: 'whatsapp' })
+    setForm(EMPTY_FORM)
   }
 
   const del = async (id: string) => {
@@ -63,6 +75,8 @@ export default function RemindersPage() {
     enviado: reminders.filter(r => r.status === 'enviado').length,
     falhou: reminders.filter(r => r.status === 'falhou').length,
   }
+
+  const selectedClient = clients.find(c => c.id === form.cliente_id)
 
   return (
     <div className="p-6">
@@ -103,7 +117,9 @@ export default function RemindersPage() {
             </tr>
           </thead>
           <tbody>
-            {reminders.map(r => (
+            {reminders.length === 0 ? (
+              <tr><td colSpan={7} className="text-center py-12 text-slate-400 text-sm">Nenhum lembrete agendado</td></tr>
+            ) : reminders.map(r => (
               <tr key={r.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
                 <td className="px-4 py-3 text-sm font-medium text-slate-800">{r.cliente_nome}</td>
                 <td className="px-4 py-3 text-sm text-slate-500">{r.questionario_nome}</td>
@@ -142,15 +158,35 @@ export default function RemindersPage() {
               <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-6 space-y-4">
-              {[
-                { label: 'Paciente *', key: 'cliente_nome', placeholder: 'Nome do paciente' },
-                { label: 'Questionário', key: 'questionario_nome', placeholder: 'Check-in Semanal' },
-              ].map(f => (
-                <div key={f.key}>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">{f.label}</label>
-                  <input value={form[f.key as keyof typeof form]} onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))} placeholder={f.placeholder} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300" />
-                </div>
-              ))}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Paciente *</label>
+                <select
+                  value={form.cliente_id}
+                  onChange={e => setForm(p => ({ ...p, cliente_id: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300 bg-white"
+                >
+                  <option value="">Selecione um paciente...</option>
+                  {clients.map(c => (
+                    <option key={c.id} value={c.id}>{c.nome}</option>
+                  ))}
+                </select>
+                {selectedClient?.whatsapp && (
+                  <p className="text-xs text-slate-400 mt-1">WhatsApp: {selectedClient.whatsapp}</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Questionário</label>
+                <select
+                  value={form.questionario_id}
+                  onChange={e => setForm(p => ({ ...p, questionario_id: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300 bg-white"
+                >
+                  <option value="">Selecione um questionário...</option>
+                  {questionnaires.map(q => (
+                    <option key={q.id} value={q.id}>{q.nome}</option>
+                  ))}
+                </select>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Data *</label>
@@ -163,7 +199,7 @@ export default function RemindersPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Tipo</label>
-                <select value={form.tipo} onChange={e => setForm(p => ({ ...p, tipo: e.target.value }))} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300">
+                <select value={form.tipo} onChange={e => setForm(p => ({ ...p, tipo: e.target.value }))} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300 bg-white">
                   <option value="inicial">Envio inicial</option>
                   <option value="lembrete">Lembrete de resposta</option>
                   <option value="vencimento_plano">Vencimento de plano</option>
@@ -171,7 +207,7 @@ export default function RemindersPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Canal</label>
-                <select value={form.canal} onChange={e => setForm(p => ({ ...p, canal: e.target.value }))} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300">
+                <select value={form.canal} onChange={e => setForm(p => ({ ...p, canal: e.target.value }))} className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300 bg-white">
                   <option value="whatsapp">WhatsApp</option>
                   <option value="email">E-mail</option>
                   <option value="ambos">WhatsApp + E-mail</option>
@@ -180,7 +216,13 @@ export default function RemindersPage() {
             </div>
             <div className="flex gap-3 p-6 border-t border-slate-100">
               <button onClick={() => setShowModal(false)} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-50">Cancelar</button>
-              <button onClick={addReminder} className="flex-1 bg-primary-600 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-primary-700">Agendar</button>
+              <button
+                onClick={handleAdd}
+                disabled={!form.cliente_id || !form.data_envio || saving}
+                className="flex-1 bg-primary-600 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving ? 'Agendando...' : 'Agendar'}
+              </button>
             </div>
           </div>
         </div>

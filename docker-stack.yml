@@ -49,8 +49,9 @@ services:
         # Redirect HTTP → HTTPS
         - "traefik.http.routers.healthflow-http.rule=Host(`healthflow.autotech.dev.br`)"
         - "traefik.http.routers.healthflow-http.entrypoints=web"
-        - "traefik.http.routers.healthflow-http.middlewares=redirect-to-https"
-        - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+        - "traefik.http.routers.healthflow-http.middlewares=healthflow-https-redirect@docker"
+        - "traefik.http.middlewares.healthflow-https-redirect.redirectscheme.scheme=https"
+        - "traefik.http.middlewares.healthflow-https-redirect.redirectscheme.permanent=true"
 
 networks:
   network:

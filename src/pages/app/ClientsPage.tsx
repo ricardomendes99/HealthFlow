@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect } from 'react'
-import { Users, Plus, Search, MessageSquare, Flag, Upload, ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { useState, useMemo, useEffect, useRef } from 'react'
+import { Users, Plus, Search, MessageSquare, Flag, Upload, ChevronLeft, ChevronRight, X, FileText, CheckCircle, AlertCircle } from 'lucide-react'
 import { getClients, addClient as addClientSvc, toggleClientFlag } from '../../services/clients.service'
 import { useAuth } from '../../context/AuthContext'
 import type { Client } from '../../types'
@@ -15,6 +15,8 @@ const TABS: { key: Tab; label: string }[] = [
 
 const PAGE_SIZE = 15
 
+type ImportStatus = { imported: number; failed: number; errors: string[] } | null
+
 export default function ClientsPage() {
   const { user } = useAuth()
   const [tab, setTab] = useState<Tab>('ativo')
@@ -23,6 +25,10 @@ export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
+  const [showImport, setShowImport] = useState(false)
+  const [importStatus, setImportStatus] = useState<ImportStatus>(null)
+  const [importing, setImporting] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
   const [newClient, setNewClient] = useState({ nome: '', whatsapp: '', email: '', observacao: '', servico: '' })
 
   useEffect(() => {
@@ -52,6 +58,41 @@ export default function ClientsPage() {
     if (added) setClients(prev => [added, ...prev])
     setNewClient({ nome: '', whatsapp: '', email: '', observacao: '', servico: '' })
     setShowModal(false)
+  }
+
+  const handleImportCSV = async (file: File) => {
+    if (!user) return
+    setImporting(true)
+    setImportStatus(null)
+    const text = await file.text()
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+    if (lines.length < 2) { setImporting(false); setImportStatus({ imported: 0, failed: 0, errors: ['Arquivo vazio ou sem dados'] }); return }
+    // Detect separator
+    const sep = lines[0].includes(';') ? ';' : ','
+    const headers = lines[0].split(sep).map(h => h.trim().toLowerCase().replace(/['"]/g, ''))
+    const idx = (names: string[]) => names.reduce((found, n) => found >= 0 ? found : headers.indexOf(n), -1)
+    const nomeIdx = idx(['nome', 'name', 'paciente', 'cliente'])
+    const wppIdx = idx(['whatsapp', 'celular', 'telefone', 'fone', 'phone'])
+    const emailIdx = idx(['email', 'e-mail'])
+    const obsIdx = idx(['observacao', 'observação', 'obs', 'nota'])
+    if (nomeIdx < 0) { setImporting(false); setImportStatus({ imported: 0, failed: 0, errors: ['Coluna "nome" não encontrada. Use: nome, paciente ou cliente'] }); return }
+    let imported = 0, failed = 0
+    const errors: string[] = []
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(sep).map(c => c.trim().replace(/^["']|["']$/g, ''))
+      const nome = cols[nomeIdx] ?? ''
+      if (!nome) { failed++; continue }
+      const added = await addClientSvc(user.id, {
+        nome,
+        whatsapp: wppIdx >= 0 ? (cols[wppIdx] ?? '') : '',
+        email: emailIdx >= 0 ? (cols[emailIdx] ?? '') : '',
+        observacao: obsIdx >= 0 ? (cols[obsIdx] ?? '') : '',
+      })
+      if (added) { imported++; setClients(prev => [added, ...prev]) }
+      else { failed++; errors.push(`Linha ${i + 1}: ${nome}`) }
+    }
+    setImporting(false)
+    setImportStatus({ imported, failed, errors })
   }
 
   const statusColor = (s: string) => {
@@ -85,7 +126,7 @@ export default function ClientsPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <button className="flex items-center gap-2 border border-slate-200 text-slate-600 text-sm font-medium px-4 py-2.5 rounded-xl hover:bg-slate-50 transition-colors">
+          <button onClick={() => { setShowImport(true); setImportStatus(null) }} className="flex items-center gap-2 border border-slate-200 text-slate-600 text-sm font-medium px-4 py-2.5 rounded-xl hover:bg-slate-50 transition-colors">
             <Upload className="w-4 h-4" /> Importar
           </button>
           <button onClick={() => setShowModal(true)} className="flex items-center gap-2 bg-primary-600 text-white text-sm font-semibold px-4 py-2.5 rounded-xl hover:bg-primary-700 transition-colors">
@@ -201,6 +242,72 @@ export default function ClientsPage() {
           </div>
         )}
       </div>
+
+      {/* Modal Importar */}
+      {showImport && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between p-6 border-b border-slate-100">
+              <h2 className="text-lg font-bold text-slate-900">Importar clientes</h2>
+              <button onClick={() => setShowImport(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-slate-50 rounded-xl p-4 text-sm text-slate-600 space-y-1">
+                <p className="font-medium text-slate-700 mb-2">Formato do arquivo CSV:</p>
+                <p>• Colunas aceitas: <span className="font-mono text-xs bg-slate-200 px-1 rounded">nome</span>, <span className="font-mono text-xs bg-slate-200 px-1 rounded">whatsapp</span>, <span className="font-mono text-xs bg-slate-200 px-1 rounded">email</span>, <span className="font-mono text-xs bg-slate-200 px-1 rounded">observacao</span></p>
+                <p>• Separador: vírgula (,) ou ponto-e-vírgula (;)</p>
+                <p>• Primeira linha deve ser o cabeçalho</p>
+                <p className="font-mono text-xs mt-2 bg-slate-200 p-2 rounded">nome;whatsapp;email<br/>João Silva;11999990000;joao@email.com</p>
+              </div>
+              <div
+                onClick={() => fileRef.current?.click()}
+                className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center cursor-pointer hover:border-primary-300 hover:bg-primary-50 transition-colors"
+              >
+                <FileText className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                <p className="text-sm font-medium text-slate-600">Clique para selecionar o arquivo CSV</p>
+                <p className="text-xs text-slate-400 mt-1">ou arraste e solte aqui</p>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".csv,.txt"
+                  className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleImportCSV(f) }}
+                />
+              </div>
+              {importing && (
+                <div className="flex items-center gap-2 text-sm text-primary-600">
+                  <div className="w-4 h-4 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
+                  Importando clientes...
+                </div>
+              )}
+              {importStatus && (
+                <div className="space-y-2">
+                  {importStatus.imported > 0 && (
+                    <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 rounded-xl p-3">
+                      <CheckCircle className="w-4 h-4 flex-shrink-0" />
+                      {importStatus.imported} cliente{importStatus.imported !== 1 ? 's' : ''} importado{importStatus.imported !== 1 ? 's' : ''} com sucesso
+                    </div>
+                  )}
+                  {importStatus.failed > 0 && (
+                    <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 rounded-xl p-3">
+                      <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p>{importStatus.failed} linha{importStatus.failed !== 1 ? 's' : ''} com erro</p>
+                        {importStatus.errors.slice(0, 3).map((e, i) => <p key={i} className="text-xs opacity-75">{e}</p>)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="flex gap-3 p-6 border-t border-slate-100">
+              <button onClick={() => setShowImport(false)} className="flex-1 border border-slate-200 text-slate-600 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-50">
+                {importStatus ? 'Fechar' : 'Cancelar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Adicionar */}
       {showModal && (
