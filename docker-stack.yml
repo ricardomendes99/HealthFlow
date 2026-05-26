@@ -10,7 +10,7 @@ version: '3.8'
 
 services:
   healthflow:
-    image: ${REGISTRY:-registry.autotech.dev.br}/healthflow:${TAG:-latest}
+    image: ghcr.io/ricardomendes99/healthflow:${TAG:-latest}
     # Ou use build direto (sem registry):
     # build:
     #   context: .
