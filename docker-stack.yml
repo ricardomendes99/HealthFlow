@@ -1,0 +1,57 @@
+# ============================================================
+# HealthFlow — Docker Stack para Portainer + Docker Swarm
+# Como usar no Portainer:
+#   1. Stacks → Add Stack → colar este conteúdo
+#   2. Adicionar as variáveis de ambiente na seção "Environment"
+#   3. Deploy the stack
+# ============================================================
+
+version: '3.8'
+
+services:
+  healthflow:
+    image: ${REGISTRY:-registry.autotech.dev.br}/healthflow:${TAG:-latest}
+    # Ou use build direto (sem registry):
+    # build:
+    #   context: .
+    #   args:
+    #     VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
+    #     VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
+    #     VITE_APP_DOMAIN: healthflow.autotech.dev.br
+
+    environment:
+      - VITE_SUPABASE_URL=https://supabase.autotech.dev.br
+      - VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.ewogICJyb2xlIjogImFub24iLAogICJpc3MiOiAic3VwYWJhc2UiLAogICJpYXQiOiAxNzE1MDUwODAwLAogICJleHAiOiAxODcyODE3MjAwCn0.9Ec1G8PyXuvqMW4v3-rL1bRm0Mu5qJ9rvQU2PTi5n-Y
+      - VITE_APP_DOMAIN=healthflow.autotech.dev.br
+
+    networks:
+      - traefik_public
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+      labels:
+        # --- Traefik v2 ---
+        - "traefik.enable=true"
+        - "traefik.http.routers.healthflow.rule=Host(`healthflow.autotech.dev.br`)"
+        - "traefik.http.routers.healthflow.entrypoints=websecure"
+        - "traefik.http.routers.healthflow.tls=true"
+        - "traefik.http.routers.healthflow.tls.certresolver=letsencrypt"
+        - "traefik.http.services.healthflow.loadbalancer.server.port=80"
+        # Redirect HTTP → HTTPS
+        - "traefik.http.routers.healthflow-http.rule=Host(`healthflow.autotech.dev.br`)"
+        - "traefik.http.routers.healthflow-http.entrypoints=web"
+        - "traefik.http.routers.healthflow-http.middlewares=redirect-to-https"
+        - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+
+networks:
+  traefik_public:
+    external: true
