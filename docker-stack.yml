@@ -25,7 +25,7 @@ services:
       - VITE_APP_DOMAIN=healthflow.autotech.dev.br
 
     networks:
-      - traefik_public
+      - network
 
     deploy:
       mode: replicated
@@ -53,5 +53,5 @@ services:
         - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
 
 networks:
-  traefik_public:
+  network:
     external: true
