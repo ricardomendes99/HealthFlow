@@ -1,21 +1,33 @@
 import { useState } from 'react'
 import { Layout, ExternalLink, Camera, Palette } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
-import { APP_DOMAIN } from '../../lib/supabase'
+import { APP_DOMAIN, supabase } from '../../lib/supabase'
 
 export default function ClientAreaPage() {
   const { user } = useAuth()
   const [form, setForm] = useState({
-    slug: user?.slug || 'dr-ricardo-junin',
-    titulo: 'Nutricionista Clínico',
+    slug: user?.slug || '',
+    titulo: user?.profissao || '',
     corPrimaria: '#2563eb',
     corSecundaria: '#1d4ed8',
   })
   const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }))
 
-  const save = () => {
+  const save = async () => {
+    if (!user) return
+    setSaving(true)
+    if (supabase) {
+      await supabase.from('professionals').update({
+        slug: form.slug,
+        titulo_profissao: form.titulo,
+        cor_primaria: form.corPrimaria,
+        cor_secundaria: form.corSecundaria,
+      }).eq('id', user.id)
+    }
+    setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }
@@ -118,8 +130,8 @@ export default function ClientAreaPage() {
             </div>
           </div>
 
-          <button onClick={save} className={`w-full py-3 rounded-xl font-semibold text-sm transition-all ${saved ? 'bg-green-500 text-white' : 'bg-primary-600 text-white hover:bg-primary-700'}`}>
-            {saved ? '✓ Salvo com sucesso!' : 'Salvar configurações'}
+          <button onClick={save} disabled={saving} className={`w-full py-3 rounded-xl font-semibold text-sm transition-all disabled:opacity-70 ${saved ? 'bg-green-500 text-white' : 'bg-primary-600 text-white hover:bg-primary-700'}`}>
+            {saving ? 'Salvando...' : saved ? '✓ Salvo com sucesso!' : 'Salvar configurações'}
           </button>
         </div>
 

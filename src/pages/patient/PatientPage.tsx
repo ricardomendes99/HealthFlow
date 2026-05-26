@@ -7,6 +7,7 @@ import {
   getClientByWhatsApp,
   getClientCheckInHistory,
 } from '../../services/patient.service'
+import { submitCheckIn } from '../../services/checkins.service'
 import type { Questionnaire, Question, CheckIn } from '../../types'
 
 type Screen = 'identify' | 'home' | 'list' | 'answering' | 'result' | 'history'
@@ -71,9 +72,26 @@ export default function PatientPage() {
     setScore(prev => prev + pts)
   }
 
-  const nextQuestion = () => {
-    if (currentQ < questions.length - 1) setCurrentQ(prev => prev + 1)
-    else setScreen('result')
+  const nextQuestion = async () => {
+    if (currentQ < questions.length - 1) {
+      setCurrentQ(prev => prev + 1)
+    } else {
+      if (patient && activeQ) {
+        const answersPayload = questions.map(q => {
+          const opt = q.opcoes?.find(o => o.texto === answers[q.id])
+          return {
+            question_id: q.id,
+            option_id: opt?.id,
+            resposta_texto: q.tipo === 'aberta' ? answers[q.id] : undefined,
+            pontuacao: opt?.pontuacao ?? 0,
+          }
+        })
+        await submitCheckIn(patient.id, activeQ.id, answersPayload, score, pct)
+        const hist = await getClientCheckInHistory(patient.id)
+        setHistory(hist)
+      }
+      setScreen('result')
+    }
   }
 
   const maxScore = questions.reduce((a, q) => a + (q.opcoes ? Math.max(...q.opcoes.map(o => o.pontuacao)) : 0) * q.peso_pontuacao, 0)
