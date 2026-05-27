@@ -6,3 +6,13 @@ dist
 .DS_Store
 .obsidian
 .claude
+
+# Arquivos de teste locais
+test_*.cjs
+test_screenshots/
+
+# Chaves e segredos — nunca commitar
+*.pem
+*.key
+.env
+.env.production

@@ -81,24 +81,49 @@ export async function getActiveQuestionnaires(profissionalId: string): Promise<Q
   }))
 }
 
-export async function getClientByWhatsApp(profissionalId: string, whatsapp: string): Promise<{ id: string; nome: string } | null> {
+export type PatientClient = {
+  id: string
+  nome: string
+  finaliza_em?: string
+  recorrencia_tipo?: 'semanal' | 'quinzenal'
+  recorrencia_questionario_id?: string
+}
+
+export async function getClientByWhatsApp(profissionalId: string, whatsapp: string): Promise<PatientClient | null> {
   const clean = whatsapp.replace(/\D/g, '')
 
   if (!supabase) {
-    const client = mockClients.find(c => c.whatsapp === clean && c.status === 'ativo')
-    return client ? { id: client.id, nome: client.nome } : null
+    const client = mockClients.find(c => c.whatsapp.replace(/\D/g, '') === clean && c.status === 'ativo')
+    if (client) return { id: client.id, nome: client.nome, finaliza_em: client.finaliza_em, recorrencia_tipo: client.recorrencia_tipo, recorrencia_questionario_id: client.recorrencia_questionario_id }
+    if (clean.length >= 8) {
+      const demo = mockClients.find(c => c.status === 'ativo')
+      return demo ? { id: demo.id, nome: demo.nome, finaliza_em: demo.finaliza_em } : null
+    }
+    return null
   }
 
   const { data, error } = await supabase
     .from('clients')
-    .select('id, nome')
+    .select('id, nome, created_at, service_id, recorrencia_tipo, recorrencia_questionario_id, services(validade_dias)')
     .eq('profissional_id', profissionalId)
     .eq('whatsapp', clean)
     .eq('status', 'ativo')
     .maybeSingle()
 
   if (error || !data) return null
-  return data
+
+  const validade = (data as any).services?.validade_dias
+  const finaliza_em = validade
+    ? new Date(new Date((data as any).created_at).getTime() + validade * 86400000).toISOString().slice(0, 10)
+    : undefined
+
+  return {
+    id: data.id,
+    nome: data.nome,
+    finaliza_em,
+    recorrencia_tipo: data.recorrencia_tipo ?? undefined,
+    recorrencia_questionario_id: data.recorrencia_questionario_id ?? undefined,
+  }
 }
 
 export async function getClientCheckInHistory(clienteId: string) {

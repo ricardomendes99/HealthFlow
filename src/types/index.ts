@@ -26,6 +26,8 @@ export interface Client {
   finaliza_em?: string
   data_criacao: string
   flag?: boolean
+  recorrencia_tipo?: 'semanal' | 'quinzenal'
+  recorrencia_questionario_id?: string
 }
 
 export interface Service {

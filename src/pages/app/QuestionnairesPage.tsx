@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { FileText, Plus, Search, Pencil, Trash2, ChevronDown, ChevronUp, X, GripVertical, LayoutTemplate, Apple, Dumbbell } from 'lucide-react'
 import { getQuestionnaires, saveQuestionnaire, deleteQuestionnaire } from '../../services/questionnaires.service'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
 import type { Questionnaire, Question, QuestionOption } from '../../types'
 
 // ── Templates por profissão ────────────────────────────────────────────────
@@ -87,6 +88,7 @@ const TRAINER_TEMPLATES: Omit<Questionnaire, 'id' | 'profissional_id' | 'data_cr
 
 export default function QuestionnairesPage() {
   const { user } = useAuth()
+  const { toast } = useToast()
   const [questionnaires, setQuestionnaires] = useState<Questionnaire[]>([])
   const [search, setSearch] = useState('')
 
@@ -125,11 +127,18 @@ export default function QuestionnairesPage() {
     const perguntas = template.perguntas?.map(p => ({
       texto: p.texto, tipo: p.tipo, ordem: p.ordem, peso_pontuacao: p.peso_pontuacao, opcoes: p.opcoes
     })) ?? []
-    const saved = await saveQuestionnaire(user.id, template.nome, template.status, perguntas)
-    if (saved) setQuestionnaires(prev => [saved, ...prev])
-    else {
-      const novo: Questionnaire = { id: String(Date.now()), profissional_id: user.id, nome: template.nome, status: template.status, total_perguntas: template.total_perguntas, data_criacao: new Date().toISOString().slice(0,10), perguntas: template.perguntas }
-      setQuestionnaires(prev => [novo, ...prev])
+    try {
+      const saved = await saveQuestionnaire(user.id, template.nome, template.status, perguntas)
+      if (saved) {
+        setQuestionnaires(prev => [saved, ...prev])
+        toast(`Questionário "${template.nome}" importado!`, 'success')
+      } else {
+        const novo: Questionnaire = { id: String(Date.now()), profissional_id: user.id, nome: template.nome, status: template.status, total_perguntas: template.total_perguntas, data_criacao: new Date().toISOString().slice(0,10), perguntas: template.perguntas }
+        setQuestionnaires(prev => [novo, ...prev])
+        toast('Template importado em modo demo. Configure o Supabase para persistir.', 'warning')
+      }
+    } catch {
+      toast('Erro ao importar template.', 'error')
     }
     setShowTemplates(false)
   }
@@ -163,20 +172,31 @@ export default function QuestionnairesPage() {
   const save = async () => {
     if (!form.nome || !user) return
     const perguntas = questions.map(p => ({ texto: p.texto, tipo: p.tipo, ordem: p.ordem, peso_pontuacao: p.peso_pontuacao, opcoes: p.opcoes }))
-    const saved = await saveQuestionnaire(user.id, form.nome, form.status, perguntas, editingQ?.id)
-    if (saved) {
-      if (editingQ) setQuestionnaires(prev => prev.map(q => q.id === editingQ.id ? saved : q))
-      else setQuestionnaires(prev => [saved, ...prev])
-    } else {
-      if (editingQ) setQuestionnaires(prev => prev.map(q => q.id === editingQ.id ? { ...q, ...form, status: form.status as 'ativo'|'inativo', total_perguntas: questions.length, perguntas: questions } : q))
-      else setQuestionnaires(prev => [{ id: String(Date.now()), profissional_id: user.id, nome: form.nome, status: form.status as 'ativo'|'inativo', total_perguntas: questions.length, data_criacao: new Date().toISOString().slice(0,10), perguntas: questions }, ...prev])
+    try {
+      const saved = await saveQuestionnaire(user.id, form.nome, form.status, perguntas, editingQ?.id)
+      if (saved) {
+        if (editingQ) setQuestionnaires(prev => prev.map(q => q.id === editingQ.id ? saved : q))
+        else setQuestionnaires(prev => [saved, ...prev])
+        toast(editingQ ? 'Questionário atualizado!' : 'Questionário criado!', 'success')
+      } else {
+        if (editingQ) setQuestionnaires(prev => prev.map(q => q.id === editingQ.id ? { ...q, ...form, status: form.status as 'ativo'|'inativo', total_perguntas: questions.length, perguntas: questions } : q))
+        else setQuestionnaires(prev => [{ id: String(Date.now()), profissional_id: user.id, nome: form.nome, status: form.status as 'ativo'|'inativo', total_perguntas: questions.length, data_criacao: new Date().toISOString().slice(0,10), perguntas: questions }, ...prev])
+        toast('Falha ao salvar no banco. Dados visíveis apenas nesta sessão.', 'warning')
+      }
+    } catch {
+      toast('Erro inesperado ao salvar questionário.', 'error')
     }
     setShowModal(false)
   }
 
   const del = async (id: string) => {
-    await deleteQuestionnaire(id)
-    setQuestionnaires(prev => prev.filter(q => q.id !== id))
+    try {
+      await deleteQuestionnaire(id)
+      setQuestionnaires(prev => prev.filter(q => q.id !== id))
+      toast('Questionário excluído.', 'success')
+    } catch {
+      toast('Erro ao excluir questionário.', 'error')
+    }
   }
 
   return (

@@ -2,9 +2,11 @@ import { useState, useRef, useEffect } from 'react'
 import { Layout, ExternalLink, Camera, Palette, Upload, X } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { APP_DOMAIN, supabase } from '../../lib/supabase'
+import { useToast } from '../../context/ToastContext'
 
 export default function ClientAreaPage() {
   const { user } = useAuth()
+  const { toast } = useToast()
   const [form, setForm] = useState({
     nome: user?.nome || '',
     slug: user?.slug || '',
@@ -40,13 +42,13 @@ export default function ClientAreaPage() {
       return
     }
     supabase.from('professionals')
-      .select('slug, titulo_profissao, cor_primaria, cor_secundaria, foto_perfil, capa_cliente')
+      .select('nome_completo, slug, titulo_profissao, cor_primaria, cor_secundaria, foto_perfil, capa_cliente')
       .eq('id', user.id)
       .single()
       .then(({ data }) => {
         if (!data) return
         setForm({
-          nome: data.nome_completo || user.nome || '',
+          nome: (data as any).nome_completo || user.nome || '',
           slug: data.slug || user.slug || '',
           titulo: data.titulo_profissao || user.profissao || '',
           corPrimaria: data.cor_primaria || '#2563eb',
@@ -107,25 +109,35 @@ export default function ClientAreaPage() {
   const save = async () => {
     if (!user) return
     setSaving(true)
-    if (supabase) {
-      await supabase.from('professionals').update({
-        nome_completo: form.nome,
-        slug: form.slug,
-        titulo_profissao: form.titulo,
-        cor_primaria: form.corPrimaria,
-        cor_secundaria: form.corSecundaria,
-      }).eq('id', user.id)
-    } else {
-      localStorage.setItem(`hf_${user.id}_area_cliente`, JSON.stringify(form))
-    }
-    const stored = localStorage.getItem('hf_user')
-    if (stored) {
-      const parsed = JSON.parse(stored)
-      localStorage.setItem('hf_user', JSON.stringify({ ...parsed, nome: form.nome }))
+    try {
+      if (supabase) {
+        const { error } = await supabase.from('professionals').update({
+          nome_completo: form.nome,
+          slug: form.slug,
+          titulo_profissao: form.titulo,
+          cor_primaria: form.corPrimaria,
+          cor_secundaria: form.corSecundaria,
+        }).eq('id', user.id)
+        if (error) {
+          toast('Falha ao salvar no banco de dados. Tente novamente.', 'error')
+          setSaving(false)
+          return
+        }
+      } else {
+        localStorage.setItem(`hf_${user.id}_area_cliente`, JSON.stringify(form))
+      }
+      const stored = localStorage.getItem('hf_user')
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        localStorage.setItem('hf_user', JSON.stringify({ ...parsed, nome: form.nome }))
+      }
+      toast('Configurações salvas com sucesso!', 'success')
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch {
+      toast('Erro inesperado ao salvar configurações.', 'error')
     }
     setSaving(false)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
   }
 
   const clientUrl = `${APP_DOMAIN}/p/${form.slug}`

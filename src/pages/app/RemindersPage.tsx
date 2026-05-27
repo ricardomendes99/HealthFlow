@@ -4,6 +4,7 @@ import { getReminders, deleteReminder, addReminder as addReminderSvc } from '../
 import { getClients } from '../../services/clients.service'
 import { getQuestionnaires } from '../../services/questionnaires.service'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
 import type { Reminder, Client, Questionnaire } from '../../types'
 
 const STATUS_MAP: Record<Reminder['status'], { label: string; cls: string }> = {
@@ -22,6 +23,7 @@ const EMPTY_FORM = { cliente_id: '', questionario_id: '', data_envio: '', hora_e
 
 export default function RemindersPage() {
   const { user } = useAuth()
+  const { toast } = useToast()
   const [reminders, setReminders] = useState<Reminder[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [questionnaires, setQuestionnaires] = useState<Questionnaire[]>([])
@@ -39,29 +41,40 @@ export default function RemindersPage() {
   const handleAdd = async () => {
     if (!form.cliente_id || !form.data_envio || !user) return
     setSaving(true)
-    const dataHora = `${form.data_envio}T${form.hora_envio}:00`
-    const clienteNome = clients.find(c => c.id === form.cliente_id)?.nome ?? ''
-    const questionarioId = form.questionario_id || (questionnaires[0]?.id ?? '')
-    const questionarioNome = questionnaires.find(q => q.id === questionarioId)?.nome ?? ''
-    const newReminder = await addReminderSvc(
-      user.id,
-      { cliente_id: form.cliente_id, questionario_id: questionarioId, data_envio_programada: dataHora, tipo: form.tipo, canal: form.canal },
-      { cliente_nome: clienteNome, questionario_nome: questionarioNome }
-    )
-    if (newReminder) {
-      setReminders(prev => [newReminder, ...prev])
-    } else {
-      const updated = await getReminders(user.id)
-      setReminders(updated)
+    try {
+      const dataHora = `${form.data_envio}T${form.hora_envio}:00`
+      const clienteNome = clients.find(c => c.id === form.cliente_id)?.nome ?? ''
+      const questionarioId = form.questionario_id || (questionnaires[0]?.id ?? '')
+      const questionarioNome = questionnaires.find(q => q.id === questionarioId)?.nome ?? ''
+      const newReminder = await addReminderSvc(
+        user.id,
+        { cliente_id: form.cliente_id, questionario_id: questionarioId, data_envio_programada: dataHora, tipo: form.tipo, canal: form.canal },
+        { cliente_nome: clienteNome, questionario_nome: questionarioNome }
+      )
+      if (newReminder) {
+        setReminders(prev => [newReminder, ...prev])
+        toast('Lembrete agendado com sucesso!', 'success')
+      } else {
+        const updated = await getReminders(user.id)
+        setReminders(updated)
+        toast('Falha ao salvar lembrete no banco de dados.', 'error')
+      }
+      setShowModal(false)
+      setForm(EMPTY_FORM)
+    } catch {
+      toast('Erro inesperado ao agendar lembrete.', 'error')
     }
     setSaving(false)
-    setShowModal(false)
-    setForm(EMPTY_FORM)
   }
 
   const del = async (id: string) => {
-    await deleteReminder(id)
-    setReminders(prev => prev.filter(r => r.id !== id))
+    try {
+      await deleteReminder(id)
+      setReminders(prev => prev.filter(r => r.id !== id))
+      toast('Lembrete excluído.', 'success')
+    } catch {
+      toast('Erro ao excluir lembrete.', 'error')
+    }
   }
 
   const formatDate = (iso: string) => {

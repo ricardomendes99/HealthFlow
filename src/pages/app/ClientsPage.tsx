@@ -1,9 +1,117 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { Users, Plus, Search, MessageSquare, Flag, Upload, ChevronLeft, ChevronRight, X, FileText, CheckCircle, AlertCircle, Pencil, Trash2 } from 'lucide-react'
+import { Users, Plus, Search, MessageSquare, Flag, Upload, ChevronLeft, ChevronRight, X, FileText, CheckCircle, AlertCircle, Pencil, Trash2, RefreshCw } from 'lucide-react'
 import { getClients, addClient as addClientSvc, updateClient as updateClientSvc, deleteClient as deleteClientSvc, changeClientStatus, toggleClientFlag } from '../../services/clients.service'
 import { getServices } from '../../services/services.service'
+import { getQuestionnaires } from '../../services/questionnaires.service'
 import { useAuth } from '../../context/AuthContext'
-import type { Client, Service } from '../../types'
+import { useToast } from '../../context/ToastContext'
+import type { Client, Service, Questionnaire } from '../../types'
+
+const EMPTY_FORM = {
+  nome: '', whatsapp: '', email: '', observacao: '', service_id: '', status: 'ativo' as Client['status'],
+  recorrencia_tipo: '' as '' | 'semanal' | 'quinzenal',
+  recorrencia_questionario_id: '',
+}
+
+interface ClientFormFieldsProps {
+  form: typeof EMPTY_FORM
+  setForm: React.Dispatch<React.SetStateAction<typeof EMPTY_FORM>>
+  services: Service[]
+  questionnaires: Questionnaire[]
+}
+
+function ClientFormFields({ form, setForm, services, questionnaires }: ClientFormFieldsProps) {
+  return (
+    <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+      {([
+        { label: 'Nome completo *', key: 'nome', placeholder: 'Nome do paciente' },
+        { label: 'WhatsApp', key: 'whatsapp', placeholder: '71999990000' },
+        { label: 'E-mail', key: 'email', placeholder: 'paciente@email.com' },
+        { label: 'Observação', key: 'observacao', placeholder: 'Ex: atleta, vegano...' },
+      ] as const).map(f => (
+        <div key={f.key}>
+          <label className="block text-sm font-medium text-slate-700 mb-1">{f.label}</label>
+          <input
+            value={form[f.key as keyof typeof form] as string}
+            onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
+            placeholder={f.placeholder}
+            className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+          />
+        </div>
+      ))}
+      <div>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Serviço</label>
+        <select
+          value={form.service_id}
+          onChange={e => setForm(prev => ({ ...prev, service_id: e.target.value }))}
+          className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300 bg-white"
+        >
+          <option value="">Sem serviço</option>
+          {services.map(s => (
+            <option key={s.id} value={s.id}>{s.nome} — R$ {s.preco}</option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
+        <select
+          value={form.status}
+          onChange={e => setForm(prev => ({ ...prev, status: e.target.value as Client['status'] }))}
+          className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300 bg-white"
+        >
+          <option value="ativo">Ativo</option>
+          <option value="finalizado">Finalizado</option>
+          <option value="inativo">Inativo</option>
+        </select>
+      </div>
+
+      {/* Recorrência */}
+      <div className="border-t border-slate-100 pt-4">
+        <div className="flex items-center gap-2 mb-3">
+          <RefreshCw className="w-4 h-4 text-primary-600" />
+          <span className="text-sm font-semibold text-slate-800">Recorrência de questionário</span>
+        </div>
+        <div className="bg-slate-50 rounded-xl p-4 space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Questionário recorrente</label>
+            <select
+              value={form.recorrencia_questionario_id}
+              onChange={e => setForm(prev => ({ ...prev, recorrencia_questionario_id: e.target.value, recorrencia_tipo: e.target.value ? (prev.recorrencia_tipo || 'semanal') : '' }))}
+              className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300 bg-white"
+            >
+              <option value="">Sem recorrência</option>
+              {questionnaires.filter(q => q.status === 'ativo').map(q => (
+                <option key={q.id} value={q.id}>{q.nome}</option>
+              ))}
+            </select>
+          </div>
+          {form.recorrencia_questionario_id && (
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Frequência</label>
+              <div className="flex gap-2">
+                {(['semanal', 'quinzenal'] as const).map(tipo => (
+                  <button
+                    key={tipo}
+                    type="button"
+                    onClick={() => setForm(prev => ({ ...prev, recorrencia_tipo: tipo }))}
+                    className={`flex-1 py-2 rounded-xl text-sm font-semibold border transition-colors ${form.recorrencia_tipo === tipo ? 'bg-primary-600 text-white border-primary-600' : 'border-slate-200 text-slate-600 hover:bg-slate-100'}`}
+                  >
+                    {tipo === 'semanal' ? 'Semanal (7 dias)' : 'Quinzenal (15 dias)'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {form.recorrencia_questionario_id && form.recorrencia_tipo && (
+            <p className="text-xs text-slate-400">
+              O questionário aparecerá como pendente a cada {form.recorrencia_tipo === 'semanal' ? '7' : '15'} dias para este paciente.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 type Tab = 'todos' | 'ativo' | 'finalizado' | 'inativo'
 
@@ -18,15 +126,15 @@ const PAGE_SIZE = 15
 
 type ImportStatus = { imported: number; failed: number; errors: string[] } | null
 
-const EMPTY_FORM = { nome: '', whatsapp: '', email: '', observacao: '', service_id: '', status: 'ativo' as Client['status'] }
-
 export default function ClientsPage() {
   const { user } = useAuth()
+  const { toast } = useToast()
   const [tab, setTab] = useState<Tab>('ativo')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [clients, setClients] = useState<Client[]>([])
   const [services, setServices] = useState<Service[]>([])
+  const [questionnaires, setQuestionnaires] = useState<Questionnaire[]>([])
   const [loading, setLoading] = useState(true)
 
   const [showAddModal, setShowAddModal] = useState(false)
@@ -44,11 +152,17 @@ export default function ClientsPage() {
 
   useEffect(() => {
     if (!user) return
-    Promise.all([getClients(user.id), getServices(user.id)]).then(([clientData, serviceData]) => {
-      setClients(clientData)
-      setServices(serviceData.filter(s => s.status === 'ativo'))
-      setLoading(false)
-    })
+    Promise.all([getClients(user.id), getServices(user.id), getQuestionnaires(user.id)])
+      .then(([clientData, serviceData, qData]) => {
+        setClients(clientData)
+        setServices(serviceData.filter(s => s.status === 'ativo'))
+        setQuestionnaires(qData)
+        setLoading(false)
+      })
+      .catch(() => {
+        toast('Erro ao carregar clientes. Verifique a conexão.', 'error')
+        setLoading(false)
+      })
   }, [user])
 
   const filtered = useMemo(() => {
@@ -63,8 +177,12 @@ export default function ClientsPage() {
   const toggleFlag = async (id: string) => {
     const c = clients.find(cl => cl.id === id)
     if (!c) return
-    await toggleClientFlag(id, !c.flag)
-    setClients(prev => prev.map(cl => cl.id === id ? { ...cl, flag: !cl.flag } : cl))
+    try {
+      await toggleClientFlag(id, !c.flag)
+      setClients(prev => prev.map(cl => cl.id === id ? { ...cl, flag: !cl.flag } : cl))
+    } catch {
+      toast('Erro ao atualizar flag do cliente.', 'error')
+    }
   }
 
   const resolveServico = (service_id: string) => services.find(s => s.id === service_id)?.nome
@@ -73,23 +191,37 @@ export default function ClientsPage() {
     if (!addForm.nome || !user) return
     setFormError('')
     setSaving(true)
-    const added = await addClientSvc(user.id, {
-      ...addForm,
-      servico: resolveServico(addForm.service_id),
-    })
-    setSaving(false)
-    if (added) {
-      setClients(prev => [{ ...added, servico: resolveServico(addForm.service_id) ?? added.servico }, ...prev])
-      setAddForm(EMPTY_FORM)
-      setShowAddModal(false)
-    } else {
-      setFormError('Erro ao salvar cliente. Verifique a conexão com o banco.')
+    try {
+      const added = await addClientSvc(user.id, {
+        ...addForm,
+        servico: resolveServico(addForm.service_id),
+        recorrencia_tipo: addForm.recorrencia_tipo || undefined,
+        recorrencia_questionario_id: addForm.recorrencia_questionario_id || undefined,
+      })
+      if (added) {
+        setClients(prev => [{ ...added, servico: resolveServico(addForm.service_id) ?? added.servico }, ...prev])
+        setAddForm(EMPTY_FORM)
+        setShowAddModal(false)
+        toast('Cliente adicionado com sucesso!', 'success')
+      } else {
+        setFormError('Erro ao salvar cliente. Verifique a conexão com o banco.')
+        toast('Falha ao salvar cliente no banco de dados.', 'error')
+      }
+    } catch {
+      setFormError('Erro inesperado. Tente novamente.')
+      toast('Erro inesperado ao salvar cliente.', 'error')
     }
+    setSaving(false)
   }
 
   const openEdit = (c: Client) => {
     setEditingClient(c)
-    setEditForm({ nome: c.nome, whatsapp: c.whatsapp || '', email: c.email || '', observacao: c.observacao || '', service_id: c.service_id || '', status: c.status })
+    setEditForm({
+      nome: c.nome, whatsapp: c.whatsapp || '', email: c.email || '',
+      observacao: c.observacao || '', service_id: c.service_id || '', status: c.status,
+      recorrencia_tipo: c.recorrencia_tipo || '',
+      recorrencia_questionario_id: c.recorrencia_questionario_id || '',
+    })
     setFormError('')
     setShowEditModal(true)
   }
@@ -98,23 +230,38 @@ export default function ClientsPage() {
     if (!editingClient || !editForm.nome) return
     setFormError('')
     setSaving(true)
-    await updateClientSvc(editingClient.id, editForm)
-    if (editForm.status !== editingClient.status) {
-      await changeClientStatus(editingClient.id, editForm.status)
+    try {
+      await updateClientSvc(editingClient.id, {
+        ...editForm,
+        recorrencia_tipo: editForm.recorrencia_tipo || undefined,
+        recorrencia_questionario_id: editForm.recorrencia_questionario_id || undefined,
+      })
+      if (editForm.status !== editingClient.status) {
+        await changeClientStatus(editingClient.id, editForm.status)
+      }
+      setClients(prev => prev.map(c => c.id === editingClient.id
+        ? { ...c, ...editForm, servico: resolveServico(editForm.service_id) ?? c.servico, recorrencia_tipo: editForm.recorrencia_tipo || undefined, recorrencia_questionario_id: editForm.recorrencia_questionario_id || undefined }
+        : c
+      ))
+      setShowEditModal(false)
+      setEditingClient(null)
+      toast('Cliente atualizado com sucesso!', 'success')
+    } catch {
+      setFormError('Erro ao salvar alterações. Tente novamente.')
+      toast('Falha ao atualizar cliente no banco de dados.', 'error')
     }
     setSaving(false)
-    setClients(prev => prev.map(c => c.id === editingClient.id
-      ? { ...c, ...editForm, servico: resolveServico(editForm.service_id) ?? c.servico }
-      : c
-    ))
-    setShowEditModal(false)
-    setEditingClient(null)
   }
 
   const handleDelete = async (c: Client) => {
     if (!window.confirm(`Excluir o cliente "${c.nome}"? Esta ação não pode ser desfeita.`)) return
-    await deleteClientSvc(c.id)
-    setClients(prev => prev.filter(cl => cl.id !== c.id))
+    try {
+      await deleteClientSvc(c.id)
+      setClients(prev => prev.filter(cl => cl.id !== c.id))
+      toast(`Cliente "${c.nome}" excluído.`, 'success')
+    } catch {
+      toast('Erro ao excluir cliente. Tente novamente.', 'error')
+    }
   }
 
   const handleImportCSV = async (file: File) => {
@@ -168,52 +315,6 @@ export default function ClientsPage() {
     if (dias <= 7) return { label, cls: 'text-amber-600 bg-amber-50', tip: `Vence em ${dias}d` }
     return { label, cls: 'text-slate-600 bg-slate-50', tip: `${dias} dias restantes` }
   }
-
-  const ClientFormFields = ({ form, setForm }: { form: typeof EMPTY_FORM; setForm: React.Dispatch<React.SetStateAction<typeof EMPTY_FORM>> }) => (
-    <div className="p-6 space-y-4">
-      {([
-        { label: 'Nome completo *', key: 'nome', placeholder: 'Nome do paciente' },
-        { label: 'WhatsApp', key: 'whatsapp', placeholder: '71999990000' },
-        { label: 'E-mail', key: 'email', placeholder: 'paciente@email.com' },
-        { label: 'Observação', key: 'observacao', placeholder: 'Ex: atleta, vegano...' },
-      ] as const).map(f => (
-        <div key={f.key}>
-          <label className="block text-sm font-medium text-slate-700 mb-1">{f.label}</label>
-          <input
-            value={form[f.key as keyof typeof form] as string}
-            onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
-            placeholder={f.placeholder}
-            className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
-          />
-        </div>
-      ))}
-      <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Serviço</label>
-        <select
-          value={form.service_id}
-          onChange={e => setForm(prev => ({ ...prev, service_id: e.target.value }))}
-          className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300 bg-white"
-        >
-          <option value="">Sem serviço</option>
-          {services.map(s => (
-            <option key={s.id} value={s.id}>{s.nome} — R$ {s.preco}</option>
-          ))}
-        </select>
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
-        <select
-          value={form.status}
-          onChange={e => setForm(prev => ({ ...prev, status: e.target.value as Client['status'] }))}
-          className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300 bg-white"
-        >
-          <option value="ativo">Ativo</option>
-          <option value="finalizado">Finalizado</option>
-          <option value="inativo">Inativo</option>
-        </select>
-      </div>
-    </div>
-  )
 
   return (
     <div className="p-6">
@@ -428,7 +529,7 @@ export default function ClientsPage() {
               <h2 className="text-lg font-bold text-slate-900">Adicionar cliente</h2>
               <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
-            <ClientFormFields form={addForm} setForm={setAddForm} />
+            <ClientFormFields form={addForm} setForm={setAddForm} services={services} questionnaires={questionnaires} />
             {formError && (
               <p className="mx-6 text-xs text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2">{formError}</p>
             )}
@@ -450,7 +551,7 @@ export default function ClientsPage() {
               <h2 className="text-lg font-bold text-slate-900">Editar cliente</h2>
               <button onClick={() => setShowEditModal(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
-            <ClientFormFields form={editForm} setForm={setEditForm} />
+            <ClientFormFields form={editForm} setForm={setEditForm} services={services} questionnaires={questionnaires} />
             {formError && (
               <p className="mx-6 text-xs text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2">{formError}</p>
             )}

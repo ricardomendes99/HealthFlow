@@ -31,20 +31,23 @@ export async function getClients(profissionalId: string): Promise<Client[]> {
       finaliza_em,
       data_criacao:    row.created_at.slice(0, 10),
       flag:            row.flag ?? false,
+      recorrencia_tipo:              row.recorrencia_tipo ?? undefined,
+      recorrencia_questionario_id:   row.recorrencia_questionario_id ?? undefined,
     }
   })
 }
 
 export async function addClient(
   profissionalId: string,
-  data: { nome: string; whatsapp: string; email: string; observacao?: string; servico?: string; service_id?: string }
+  data: { nome: string; whatsapp: string; email: string; observacao?: string; servico?: string; service_id?: string; status?: Client['status']; recorrencia_tipo?: Client['recorrencia_tipo']; recorrencia_questionario_id?: string }
 ): Promise<Client | null> {
   if (!supabase) {
     const novo: Client = {
       id: String(Date.now()), profissional_id: profissionalId,
-      nome: data.nome, whatsapp: data.whatsapp, email: data.email,
+      nome: data.nome, whatsapp: (data.whatsapp ?? '').replace(/\D/g, ''), email: data.email,
       observacao: data.observacao, servico: data.servico, service_id: data.service_id,
-      status: 'ativo', data_criacao: new Date().toISOString().slice(0, 10), flag: false,
+      status: data.status ?? 'ativo', data_criacao: new Date().toISOString().slice(0, 10), flag: false,
+      recorrencia_tipo: data.recorrencia_tipo, recorrencia_questionario_id: data.recorrencia_questionario_id,
     }
     mockClients.unshift(novo)
     return novo
@@ -59,6 +62,8 @@ export async function addClient(
       email: data.email,
       observacao: data.observacao,
       service_id: data.service_id || null,
+      recorrencia_tipo: data.recorrencia_tipo || null,
+      recorrencia_questionario_id: data.recorrencia_questionario_id || null,
     })
     .select('*, services(nome, validade_dias)')
     .single()
@@ -78,12 +83,14 @@ export async function addClient(
     servico: (row as any).services?.nome ?? undefined,
     service_id: row.service_id ?? undefined,
     finaliza_em, data_criacao: row.created_at.slice(0, 10), flag: row.flag ?? false,
+    recorrencia_tipo: row.recorrencia_tipo ?? undefined,
+    recorrencia_questionario_id: row.recorrencia_questionario_id ?? undefined,
   }
 }
 
 export async function updateClient(
   id: string,
-  data: Partial<Pick<Client, 'nome' | 'whatsapp' | 'email' | 'observacao' | 'servico' | 'service_id' | 'status'>>
+  data: Partial<Pick<Client, 'nome' | 'whatsapp' | 'email' | 'observacao' | 'servico' | 'service_id' | 'status' | 'recorrencia_tipo' | 'recorrencia_questionario_id'>>
 ): Promise<void> {
   if (!supabase) {
     const c = mockClients.find(c => c.id === id)
@@ -94,6 +101,8 @@ export async function updateClient(
   await supabase.from('clients').update({
     ...dbFields,
     service_id: data.service_id || null,
+    recorrencia_tipo: data.recorrencia_tipo || null,
+    recorrencia_questionario_id: data.recorrencia_questionario_id || null,
   }).eq('id', id)
 }
 

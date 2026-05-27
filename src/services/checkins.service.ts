@@ -7,24 +7,22 @@ export async function getCheckIns(profissionalId: string): Promise<CheckIn[]> {
 
   const { data, error } = await supabase
     .from('vw_check_in_comparativo')
-    .select('*, clients(nome, profissional_id), questionnaires(nome)')
-    .eq('clients.profissional_id', profissionalId)
+    .select('*')
+    .eq('profissional_id', profissionalId)
     .order('data_resposta', { ascending: false })
     .limit(50)
 
   if (error) { console.error('getCheckIns:', error); return [] }
 
-  return data
-    .filter(row => row.clients?.profissional_id === profissionalId)
-    .map(row => ({
-      id: row.id, questionario_id: row.questionario_id,
-      questionario_nome: row.questionnaires?.nome ?? '',
-      cliente_id: row.cliente_id, cliente_nome: row.clients?.nome ?? '',
-      data_resposta: row.data_resposta,
-      pontuacao_total: row.pontuacao_total,
-      pontuacao_percentual: row.pontuacao_percentual,
-      comparativo: row.comparativo ?? undefined,
-    }))
+  return data.map(row => ({
+    id: row.id, questionario_id: row.questionario_id,
+    questionario_nome: row.questionario_nome ?? '',
+    cliente_id: row.cliente_id, cliente_nome: row.cliente_nome ?? '',
+    data_resposta: row.data_resposta,
+    pontuacao_total: row.pontuacao_total,
+    pontuacao_percentual: row.pontuacao_percentual,
+    comparativo: row.comparativo ?? undefined,
+  }))
 }
 
 export async function getProgressData(clienteId: string, questionarioId: string) {

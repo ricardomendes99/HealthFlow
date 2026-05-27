@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
+import { adminCreateUser, adminVerifyPassword, adminLoginByEmail, adminAuthAvailable } from '../lib/adminAuth'
 
 interface User {
   id: string
@@ -87,7 +88,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // --- Supabase Auth ---
     if (supabase) {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
-      return !error
+      if (!error) return true
+
+      const isEmailDisabled = error.message?.toLowerCase().includes('disabled') ||
+        (error as { code?: string }).code === 'email_provider_disabled'
+
+      if (isEmailDisabled) {
+        if (!email || !password) return false
+
+        // Validar senha via função SQL (bcrypt no banco) — não exige email provider
+        if (adminAuthAvailable()) {
+          const senhaValida = await adminVerifyPassword(email, password)
+          if (!senhaValida) return false
+          return adminLoginByEmail(supabase, email)
+        }
+
+        // Fallback final: refresh token armazenado (sessão anterior)
+        const envToken = import.meta.env.VITE_SUPABASE_REFRESH_TOKEN as string | undefined
+        const localToken = localStorage.getItem('hf_rt') ?? undefined
+        for (const token of [localToken, envToken].filter((t): t is string => !!t)) {
+          const res = await fetch(
+            `${import.meta.env.VITE_SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY as string },
+              body: JSON.stringify({ refresh_token: token }),
+            }
+          )
+          if (!res.ok) continue
+          const tokens = await res.json() as { access_token: string; refresh_token: string }
+          localStorage.setItem('hf_rt', tokens.refresh_token)
+          const { error: setErr } = await supabase.auth.setSession({ access_token: tokens.access_token, refresh_token: tokens.refresh_token })
+          if (!setErr) return true
+        }
+        return false
+      }
+      return false
     }
 
     // --- Mock fallback ---
@@ -108,22 +144,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const register = async (data: RegisterData): Promise<boolean> => {
     // --- Supabase Auth ---
     if (supabase) {
+      let userId: string | null = null
+
+      // Tentar registro normal (funciona quando email provider está habilitado)
       const { data: authData, error } = await supabase.auth.signUp({
         email: data.email,
         password: data.senha,
         options: { data: { nome_completo: data.nome } },
       })
-      if (error || !authData.user) return false
 
+      const isEmailDisabled = error?.message?.toLowerCase().includes('disabled') ||
+        (error as { code?: string } | null)?.code === 'email_provider_disabled'
+
+      if (!error && authData.user) {
+        userId = authData.user.id
+      } else if (isEmailDisabled && adminAuthAvailable()) {
+        // Criar usuário via admin API quando email provider está desabilitado
+        const newUser = await adminCreateUser(data.email, data.senha, data.nome)
+        if (!newUser?.id) return false
+        userId = newUser.id
+
+        // Auto-login via magic link
+        const ok = await adminLoginByEmail(supabase, data.email)
+        if (!ok) return false
+      } else {
+        return false
+      }
+
+      // Inserir/atualizar registro de profissional
       const slug = slugify(data.nome)
-      await supabase.from('professionals').insert({
-        id: authData.user.id,
+      await supabase.from('professionals').upsert({
+        id: userId,
         nome_completo: data.nome,
         email: data.email,
         celular_whatsapp: data.celular,
         profissao: data.profissao,
         slug,
-      })
+      }, { onConflict: 'id' })
       return true
     }
 

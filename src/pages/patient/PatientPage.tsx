@@ -1,16 +1,44 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { ChevronRight, ChevronLeft, ClipboardList, History, TrendingUp, Phone } from 'lucide-react'
+import { ChevronRight, ChevronLeft, ClipboardList, History, TrendingUp, TrendingDown, Phone, AlertTriangle } from 'lucide-react'
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import {
   getProfessionalBySlug,
   getActiveQuestionnaires,
   getClientByWhatsApp,
   getClientCheckInHistory,
+  type PatientClient,
 } from '../../services/patient.service'
 import { submitCheckIn } from '../../services/checkins.service'
 import type { Questionnaire, Question, CheckIn } from '../../types'
 
 type Screen = 'identify' | 'home' | 'list' | 'answering' | 'result' | 'history'
+
+function daysUntilExpiry(finaliza_em?: string): number | null {
+  if (!finaliza_em) return null
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const exp = new Date(finaliza_em); exp.setHours(0, 0, 0, 0)
+  return Math.ceil((exp.getTime() - today.getTime()) / 86400000)
+}
+
+function filterPending(
+  questionnaires: import('../../types').Questionnaire[],
+  history: import('../../types').CheckIn[],
+  client: PatientClient,
+) {
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  return questionnaires.filter(q => {
+    const answers = history.filter(h => h.questionario_id === q.id)
+    if (answers.length === 0) return true
+    const lastDate = new Date(answers[0].data_resposta); lastDate.setHours(0, 0, 0, 0)
+    const daysSince = Math.round((today.getTime() - lastDate.getTime()) / 86400000)
+    let period = 1 // padrão: aparece novamente no dia seguinte
+    if (client.recorrencia_questionario_id === q.id) {
+      period = client.recorrencia_tipo === 'quinzenal' ? 15 : 7
+    }
+    return daysSince >= period
+  })
+}
 
 export default function PatientPage() {
   const { slug } = useParams<{ slug: string }>()
@@ -21,7 +49,7 @@ export default function PatientPage() {
   const [identifying, setIdentifying] = useState(false)
 
   const [prof, setProf] = useState<{ id: string; nome_completo: string; titulo_profissao: string; cor_primaria: string } | null>(null)
-  const [patient, setPatient] = useState<{ id: string; nome: string } | null>(null)
+  const [patient, setPatient] = useState<PatientClient | null>(null)
   const [questionnaires, setQuestionnaires] = useState<Questionnaire[]>([])
   const [history, setHistory] = useState<CheckIn[]>([])
 
@@ -29,18 +57,18 @@ export default function PatientPage() {
   const [questions, setQuestions] = useState<Question[]>([])
   const [currentQ, setCurrentQ] = useState(0)
   const [answers, setAnswers] = useState<Record<string, string>>({})
-  const [score, setScore] = useState(0)
+  const [finalResult, setFinalResult] = useState<{ pct: number } | null>(null)
 
   useEffect(() => {
     if (!slug) return
     getProfessionalBySlug(slug).then(setProf)
   }, [slug])
 
-  const identify = async () => {
-    if (!whatsapp || !prof) return
+  const doIdentify = async (phone: string) => {
+    if (!prof) return
     setIdentifying(true)
     setIdentifyError('')
-    const client = await getClientByWhatsApp(prof.id, whatsapp)
+    const client = await getClientByWhatsApp(prof.id, phone)
     if (!client) {
       setIdentifyError('WhatsApp não encontrado. Verifique o número ou fale com seu profissional.')
       setIdentifying(false)
@@ -51,31 +79,44 @@ export default function PatientPage() {
       getActiveQuestionnaires(prof.id),
       getClientCheckInHistory(client.id),
     ])
-    setQuestionnaires(qs)
     setHistory(hist)
+    setQuestionnaires(filterPending(qs, hist, client))
     setScreen('home')
     setIdentifying(false)
   }
+
+  const identify = () => { if (whatsapp) doIdentify(whatsapp) }
 
   const startQuestionnaire = (q: Questionnaire) => {
     setActiveQ(q)
     setQuestions(q.perguntas || [])
     setCurrentQ(0)
     setAnswers({})
-    setScore(0)
+    setFinalResult(null)
     setScreen('answering')
   }
 
-  const selectOption = (questionId: string, optionText: string, pts: number) => {
-    if (answers[questionId]) return
+  // Calcula score a partir das respostas atuais (permite re-seleção)
+  const computeScore = (qs: Question[], ans: Record<string, string>) =>
+    qs.reduce((total, q) => {
+      const sel = q.opcoes?.find(o => o.texto === ans[q.id])
+      return total + (sel?.pontuacao ?? 0) * q.peso_pontuacao
+    }, 0)
+
+  const computeMax = (qs: Question[]) =>
+    qs.reduce((a, q) => a + (q.opcoes && q.opcoes.length > 0 ? Math.max(...q.opcoes.map(o => o.pontuacao)) : 0) * q.peso_pontuacao, 0)
+
+  const selectOption = (questionId: string, optionText: string) => {
     setAnswers(prev => ({ ...prev, [questionId]: optionText }))
-    setScore(prev => prev + pts)
   }
 
   const nextQuestion = async () => {
     if (currentQ < questions.length - 1) {
       setCurrentQ(prev => prev + 1)
     } else {
+      const finalScore = computeScore(questions, answers)
+      const maxScore = computeMax(questions)
+      const finalPct = maxScore > 0 ? Math.round((finalScore / maxScore) * 100) : 0
       if (patient && activeQ) {
         const answersPayload = questions.map(q => {
           const opt = q.opcoes?.find(o => o.texto === answers[q.id])
@@ -86,16 +127,18 @@ export default function PatientPage() {
             pontuacao: opt?.pontuacao ?? 0,
           }
         })
-        await submitCheckIn(patient.id, activeQ.id, answersPayload, score, pct)
+        await submitCheckIn(patient.id, activeQ.id, answersPayload, finalScore, finalPct)
         const hist = await getClientCheckInHistory(patient.id)
         setHistory(hist)
+        const allQs = await getActiveQuestionnaires(prof!.id)
+        setQuestionnaires(filterPending(allQs, hist, patient))
       }
+      setFinalResult({ pct: maxScore > 0 ? Math.round((computeScore(questions, answers) / maxScore) * 100) : 0 })
       setScreen('result')
     }
   }
 
-  const maxScore = questions.reduce((a, q) => a + (q.opcoes ? Math.max(...q.opcoes.map(o => o.pontuacao)) : 0) * q.peso_pontuacao, 0)
-  const pct = maxScore > 0 ? Math.round((score / maxScore) * 100) : 0
+  const pct = finalResult?.pct ?? 0
 
   const lastName = history.length > 0 ? history[0] : null
   const avgScore = history.length > 0 ? Math.round(history.reduce((a, h) => a + h.pontuacao_percentual, 0) / history.length) : null
@@ -143,7 +186,7 @@ export default function PatientPage() {
                     value={whatsapp}
                     onChange={e => setWhatsapp(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && identify()}
-                    placeholder="Ex: 11999990000"
+                    placeholder="Ex: 71999990001"
                     className="w-full border-2 border-slate-200 rounded-2xl px-4 py-3.5 text-sm focus:outline-none focus:border-primary-400 text-center text-lg tracking-wide"
                   />
                   {identifyError && (
@@ -156,6 +199,12 @@ export default function PatientPage() {
                     style={{ backgroundColor: cor }}
                   >
                     {identifying ? 'Verificando...' : 'Continuar'}
+                  </button>
+                  <button
+                    onClick={() => doIdentify('71999990001')}
+                    className="w-full border border-slate-200 text-slate-500 text-xs py-2.5 rounded-2xl hover:bg-slate-50 transition-colors"
+                  >
+                    ▶ Acessar como paciente demo
                   </button>
                 </div>
               </div>
@@ -188,6 +237,24 @@ export default function PatientPage() {
                     <span>Histórico de respostas</span>
                   </button>
                 </div>
+                {(() => {
+                  const days = daysUntilExpiry(patient.finaliza_em)
+                  if (days === null || days > 7) return null
+                  const msg = days <= 0
+                    ? 'Seu plano venceu! Entre em contato para renovar.'
+                    : days === 1
+                      ? 'Seu plano vence amanhã! Entre em contato para renovar.'
+                      : `Seu plano vence em ${days} dias. Entre em contato para renovar.`
+                  return (
+                    <div className="rounded-2xl p-4 flex items-start gap-3 bg-amber-50 border border-amber-200">
+                      <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <div className="text-sm font-semibold text-amber-800">Renovação do plano</div>
+                        <div className="text-xs text-amber-700 mt-0.5">{msg}</div>
+                      </div>
+                    </div>
+                  )
+                })()}
                 {lastName && (
                   <div className="rounded-2xl p-4 mt-auto" style={{ backgroundColor: cor + '15' }}>
                     <div className="flex items-center gap-2 mb-2">
@@ -255,8 +322,8 @@ export default function PatientPage() {
                     {questions[currentQ].opcoes?.map(opt => (
                       <button
                         key={opt.id}
-                        onClick={() => selectOption(questions[currentQ].id, opt.texto, opt.pontuacao)}
-                        className={`w-full text-left border-2 rounded-xl px-4 py-3 text-sm font-medium transition-all ${answers[questions[currentQ].id] === opt.texto ? 'text-white' : 'border-slate-200 text-slate-700 hover:border-opacity-60'}`}
+                        onClick={() => selectOption(questions[currentQ].id, opt.texto)}
+                        className={`w-full text-left border-2 rounded-xl px-4 py-3 text-sm font-medium transition-all ${answers[questions[currentQ].id] === opt.texto ? '' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}
                         style={answers[questions[currentQ].id] === opt.texto ? { borderColor: cor, backgroundColor: cor, color: 'white' } : {}}
                       >
                         {opt.texto}
@@ -315,7 +382,7 @@ export default function PatientPage() {
             {/* Histórico */}
             {screen === 'history' && (
               <div>
-                <div className="flex items-center gap-2 mb-5">
+                <div className="flex items-center gap-2 mb-4">
                   <button onClick={() => setScreen('home')} className="text-slate-400 hover:text-slate-600">
                     <ChevronLeft className="w-5 h-5" />
                   </button>
@@ -325,23 +392,84 @@ export default function PatientPage() {
                   <div className="text-center text-sm text-slate-400 py-12">Nenhuma resposta ainda</div>
                 ) : (
                   <>
-                    <div className="space-y-3">
-                      {history.map(h => (
-                        <div key={h.id} className="bg-slate-50 rounded-2xl p-4 flex items-center justify-between">
-                          <div>
-                            <div className="text-sm font-semibold text-slate-800">{h.questionario_nome}</div>
-                            <div className="text-xs text-slate-400">{new Date(h.data_resposta).toLocaleDateString('pt-BR')}</div>
+                    {/* Gráfico de evolução */}
+                    {history.length >= 2 && (() => {
+                      const chartData = [...history].reverse().map((h, i) => ({
+                        label: `${i + 1}`,
+                        score: h.pontuacao_percentual,
+                        data: new Date(h.data_resposta).toLocaleDateString('pt-BR'),
+                      }))
+                      const latest = history[0]
+                      const delta = latest.comparativo
+                      return (
+                        <div className="rounded-2xl p-4 mb-4 border border-slate-100 bg-white shadow-sm">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Evolução</span>
+                            {delta !== undefined && delta !== null && delta !== 0 && (
+                              <span className={`flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${delta > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                                {delta > 0
+                                  ? <TrendingUp className="w-3 h-3" />
+                                  : <TrendingDown className="w-3 h-3" />}
+                                {delta > 0 ? '+' : ''}{Math.round(delta)}% vs anterior
+                              </span>
+                            )}
                           </div>
-                          <div className="text-xl font-black" style={{ color: cor }}>{h.pontuacao_percentual}%</div>
+                          <ResponsiveContainer width="100%" height={110}>
+                            <LineChart data={chartData} margin={{ top: 8, right: 8, left: -28, bottom: 0 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                              <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                              <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} />
+                              <Tooltip
+                                contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.10)', fontSize: 12 }}
+                                formatter={(v: number) => [`${v}%`, 'Pontuação']}
+                                labelFormatter={(_, payload) => payload?.[0]?.payload?.data ?? ''}
+                              />
+                              <Line
+                                type="monotone"
+                                dataKey="score"
+                                stroke={cor}
+                                strokeWidth={2.5}
+                                dot={{ fill: cor, r: 4, strokeWidth: 0 }}
+                                activeDot={{ r: 6, strokeWidth: 0 }}
+                              />
+                            </LineChart>
+                          </ResponsiveContainer>
+                          {avgScore !== null && (
+                            <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-100">
+                              <span className="text-xs text-slate-400">Média geral</span>
+                              <span className="text-sm font-black" style={{ color: cor }}>{avgScore}%</span>
+                            </div>
+                          )}
                         </div>
-                      ))}
+                      )
+                    })()}
+
+                    {/* Lista de check-ins */}
+                    <div className="space-y-2">
+                      {history.map(h => {
+                        const delta = h.comparativo
+                        return (
+                          <div key={h.id} className="bg-slate-50 rounded-2xl p-3.5 flex items-center justify-between">
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-semibold text-slate-800 truncate">{h.questionario_nome}</div>
+                              <div className="text-xs text-slate-400">{new Date(h.data_resposta).toLocaleDateString('pt-BR')}</div>
+                            </div>
+                            <div className="flex flex-col items-end ml-3 gap-0.5 flex-shrink-0">
+                              <span className="text-xl font-black" style={{ color: cor }}>{h.pontuacao_percentual}%</span>
+                              {delta !== undefined && delta !== null && delta !== 0 && (
+                                <span className={`flex items-center gap-0.5 text-xs font-semibold ${delta > 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                  {delta > 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                                  {delta > 0 ? '+' : ''}{Math.round(delta)}%
+                                </span>
+                              )}
+                              {(delta === 0) && (
+                                <span className="text-xs text-slate-400">=</span>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
-                    {avgScore !== null && (
-                      <div className="rounded-2xl p-4 mt-4 text-center" style={{ backgroundColor: cor + '10' }}>
-                        <div className="text-2xl font-black mb-1" style={{ color: cor }}>{avgScore}%</div>
-                        <div className="text-xs text-slate-500">Média geral</div>
-                      </div>
-                    )}
                   </>
                 )}
               </div>

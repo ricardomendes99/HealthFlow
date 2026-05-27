@@ -3,11 +3,13 @@ import { Briefcase, Plus, Search, Pencil, X, Trash2 } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { getServices, saveService, deleteService as deleteServiceSvc, getFinancialEntries, getChartData } from '../../services/services.service'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
 import { chartData as mockChartData } from '../../data/mockData'
 import type { Service, FinancialEntry } from '../../types'
 
 export default function ServicesPage() {
   const { user } = useAuth()
+  const { toast } = useToast()
   const [services, setServices] = useState<Service[]>([])
   const [financialEntries, setFinancialEntries] = useState<FinancialEntry[]>([])
   const [chart, setChart] = useState(mockChartData)
@@ -43,20 +45,31 @@ export default function ServicesPage() {
 
   const handleDelete = async (s: Service) => {
     if (!window.confirm(`Excluir o serviço "${s.nome}"? Esta ação não pode ser desfeita.`)) return
-    await deleteServiceSvc(s.id)
-    setServices(prev => prev.filter(sv => sv.id !== s.id))
+    try {
+      await deleteServiceSvc(s.id)
+      setServices(prev => prev.filter(sv => sv.id !== s.id))
+      toast(`Serviço "${s.nome}" excluído.`, 'success')
+    } catch {
+      toast('Erro ao excluir serviço. Tente novamente.', 'error')
+    }
   }
 
   const save = async () => {
     if (!form.nome || !user) return
     const payload = { nome: form.nome, validade_dias: Number(form.validade_dias), preco: Number(form.preco), modalidade: form.modalidade, status: form.status }
-    const saved = await saveService(user.id, payload, editId)
-    if (saved) {
-      if (editId) setServices(prev => prev.map(s => s.id === editId ? { ...s, ...saved } : s))
-      else setServices(prev => [saved, ...prev])
-    } else {
-      if (editId) setServices(prev => prev.map(s => s.id === editId ? { ...s, ...payload, validade_dias: Number(form.validade_dias), preco: Number(form.preco) } as Service : s))
-      else setServices(prev => [{ id: String(Date.now()), profissional_id: user.id, vendas: 0, faturamento: 0, data_criacao: new Date().toISOString().slice(0,10), ...payload, status: form.status as 'ativo'|'inativo', modalidade: form.modalidade as 'presencial'|'online' }, ...prev])
+    try {
+      const saved = await saveService(user.id, payload, editId)
+      if (saved) {
+        if (editId) setServices(prev => prev.map(s => s.id === editId ? { ...s, ...saved } : s))
+        else setServices(prev => [saved, ...prev])
+        toast(editId ? 'Serviço atualizado com sucesso!' : 'Serviço criado com sucesso!', 'success')
+      } else {
+        toast('Falha ao salvar serviço no banco de dados.', 'error')
+        if (editId) setServices(prev => prev.map(s => s.id === editId ? { ...s, ...payload, validade_dias: Number(form.validade_dias), preco: Number(form.preco) } as Service : s))
+        else setServices(prev => [{ id: String(Date.now()), profissional_id: user.id, vendas: 0, faturamento: 0, data_criacao: new Date().toISOString().slice(0,10), ...payload, status: form.status as 'ativo'|'inativo', modalidade: form.modalidade as 'presencial'|'online' }, ...prev])
+      }
+    } catch {
+      toast('Erro inesperado ao salvar serviço.', 'error')
     }
     setShowModal(false)
   }
